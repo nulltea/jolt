@@ -236,7 +236,40 @@ where
             );
         }
     }
-    //@TODO(markosg04) verifier side for the bytecode claims
+    
+    fn cache_openings_verifier(
+        &mut self,
+        accumulator: Option<Rc<RefCell<VerifierOpeningAccumulator<F, PCS>>>>,
+        r_sumcheck: Option<&[F]>,
+    ) {
+        if let (Some(accumulator), Some(r_sumcheck)) = (accumulator, r_sumcheck) {
+            if let Some(_claims) = &self.claims {
+                let verifier_state = self
+                    .verifier_state
+                    .as_ref()
+                    .expect("Verifier state not initialized");
+                
+  
+                let num_rounds = self.num_rounds();
+                let offset = r_sumcheck.len() - num_rounds;
+                let r_slice = &r_sumcheck[offset..];
+                let r_cycle_prime = r_slice.iter().rev().cloned().collect::<Vec<_>>();
+                
+                // wa(r_address, r_cycle_prime)
+                let mut wa_opening_point = verifier_state.r_address.clone();
+                wa_opening_point.extend(&r_cycle_prime);
+
+                accumulator.borrow_mut().populate_claim_opening(
+                    OpeningsKeys::RegistersValEvaluationInc,
+                    r_cycle_prime,
+                );
+                accumulator.borrow_mut().populate_claim_opening(
+                    OpeningsKeys::RegistersValEvaluationWa,
+                    wa_opening_point,
+                );
+            }
+        }
+    }
 }
 
 impl<F: JoltField, PCS: CommitmentScheme<Field = F>> StagedSumcheck<F, PCS>
