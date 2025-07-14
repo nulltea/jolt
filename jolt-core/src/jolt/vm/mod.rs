@@ -22,7 +22,7 @@ use std::{
     io::{Read, Write},
     path::Path,
 };
-use tracer::instruction::{RV32IMCycle, RV32IMInstruction};
+use tracer::instruction::RV32IMInstruction;
 use tracer::JoltDevice;
 
 #[derive(Debug, Clone, CanonicalSerialize, CanonicalDeserialize)]
@@ -267,7 +267,7 @@ where
     }
 }
 
-pub mod bytecode;
+pub mod bytecode; 
 pub mod instruction_lookups;
 #[cfg(feature = "prover")]
 mod prover;

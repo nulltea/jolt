@@ -8,12 +8,11 @@ use crate::{
     field::JoltField,
     poly::{
         eq_poly::EqPolynomial,
-        multilinear_polynomial::PolynomialBinding,
     },
     utils::{
         errors::ProofVerifyError,
         math::Math,
-        transcript::{AppendToTranscript, Transcript},
+        transcript::Transcript,
     },
 };
 

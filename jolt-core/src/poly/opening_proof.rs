@@ -18,15 +18,10 @@ use super::{
 };
 #[cfg(test)]
 use crate::poly::multilinear_polynomial::PolynomialEvaluation;
-use crate::{
-    field::JoltField,
-    optimal_iter, optimal_iter_mut,
-    subprotocols::sumcheck::SumcheckInstanceProof,
-    utils::{
-        errors::ProofVerifyError,
-        transcript::{AppendToTranscript, Transcript},
-    },
-};
+use crate::{field::JoltField, join_if_rayon, optimal_iter, optimal_iter_mut, subprotocols::sumcheck::SumcheckInstanceProof, utils::{
+    errors::ProofVerifyError,
+    transcript::{AppendToTranscript, Transcript},
+}};
 
 /// An opening computed by the prover.
 ///
@@ -334,9 +329,9 @@ impl<F: JoltField, ProofTranscript: Transcript> ProverOpeningAccumulator<F, Proo
 
             optimal_iter_mut!(self.openings).for_each(|opening| {
                 if remaining_rounds <= opening.opening_point.len() {
-                    rayon::join(
+                    join_if_rayon!(
                         || opening.eq_poly.bind(r_j, BindingOrder::HighToLow),
-                        || opening.polynomial.bind(r_j, BindingOrder::HighToLow),
+                        || opening.polynomial.bind(r_j, BindingOrder::HighToLow)
                     );
                 }
             });
