@@ -18,10 +18,15 @@ use super::{
 };
 #[cfg(test)]
 use crate::poly::multilinear_polynomial::PolynomialEvaluation;
-use crate::{field::JoltField, join_if_rayon, optimal_iter, optimal_iter_mut, subprotocols::sumcheck::SumcheckInstanceProof, utils::{
-    errors::ProofVerifyError,
-    transcript::{AppendToTranscript, Transcript},
-}};
+use crate::{
+    field::JoltField,
+    join_if_rayon, optimal_iter, optimal_iter_mut,
+    subprotocols::sumcheck::SumcheckInstanceProof,
+    utils::{
+        errors::ProofVerifyError,
+        transcript::{AppendToTranscript, Transcript},
+    },
+};
 
 /// An opening computed by the prover.
 ///

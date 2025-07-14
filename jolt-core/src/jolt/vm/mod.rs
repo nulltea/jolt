@@ -267,7 +267,7 @@ where
     }
 }
 
-pub mod bytecode; 
+pub mod bytecode;
 pub mod instruction_lookups;
 #[cfg(feature = "prover")]
 mod prover;

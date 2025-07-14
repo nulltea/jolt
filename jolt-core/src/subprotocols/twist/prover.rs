@@ -1,3 +1,7 @@
+use crate::subprotocols::sumcheck::SumcheckInstanceProof;
+use crate::subprotocols::twist::{
+    ReadWriteCheckingProof, TwistAlgorithm, TwistProof, ValEvaluationProof,
+};
 use crate::{
     field::{JoltField, OptimizedMul},
     poly::{
@@ -8,15 +12,12 @@ use crate::{
         unipoly::{CompressedUniPoly, UniPoly},
     },
     utils::{
-        errors::ProofVerifyError,
         math::Math,
         thread::{drop_in_background_thread, unsafe_allocate_zero_vec},
         transcript::{AppendToTranscript, Transcript},
     },
 };
 use rayon::prelude::*;
-use crate::subprotocols::sumcheck::SumcheckInstanceProof;
-use crate::subprotocols::twist::{ReadWriteCheckingProof, TwistAlgorithm, TwistProof, ValEvaluationProof};
 
 impl<F: JoltField, ProofTranscript: Transcript> TwistProof<F, ProofTranscript> {
     #[tracing::instrument(skip_all, name = "TwistProof::prove")]

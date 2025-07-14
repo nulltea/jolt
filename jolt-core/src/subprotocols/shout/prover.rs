@@ -1,3 +1,7 @@
+use crate::subprotocols::shout::{
+    BooleanityProverState, BooleanitySumcheck, ShoutProof, ShoutProverState, ShoutSumcheck,
+};
+use crate::subprotocols::sumcheck::{BatchedSumcheck, SumcheckInstanceProof};
 use crate::{
     field::JoltField,
     poly::{
@@ -9,15 +13,12 @@ use crate::{
         unipoly::{CompressedUniPoly, UniPoly},
     },
     utils::{
-        errors::ProofVerifyError,
         math::Math,
         thread::unsafe_allocate_zero_vec,
         transcript::{AppendToTranscript, Transcript},
     },
 };
 use rayon::prelude::*;
-use crate::subprotocols::shout::{BooleanityProverState, BooleanitySumcheck, BooleanityVerifierState, ShoutProof, ShoutProverState, ShoutSumcheck, ShoutSumcheckClaims, ShoutVerifierState};
-use crate::subprotocols::sumcheck::{BatchableSumcheckInstance, BatchedSumcheck, SumcheckInstanceProof};
 
 impl<F: JoltField> ShoutProverState<F> {
     #[tracing::instrument(skip_all)]
@@ -434,12 +435,12 @@ pub fn prove_booleanity<F: JoltField, ProofTranscript: Transcript>(
         {
             let expected: F = eq_r_r
                 * (0..H.len())
-                .map(|j| {
-                    let D_j = D.get_bound_coeff(j);
-                    let H_j = H.get_bound_coeff(j);
-                    D_j * (H_j.square() - H_j)
-                })
-                .sum::<F>();
+                    .map(|j| {
+                        let D_j = D.get_bound_coeff(j);
+                        let H_j = H.get_bound_coeff(j);
+                        D_j * (H_j.square() - H_j)
+                    })
+                    .sum::<F>();
             assert_eq!(
                 expected, previous_claim,
                 "Sumcheck sanity check failed in round {_round}"

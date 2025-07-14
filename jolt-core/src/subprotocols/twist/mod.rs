@@ -6,14 +6,8 @@ pub use prover::*;
 use super::sumcheck::SumcheckInstanceProof;
 use crate::{
     field::JoltField,
-    poly::{
-        eq_poly::EqPolynomial,
-    },
-    utils::{
-        errors::ProofVerifyError,
-        math::Math,
-        transcript::Transcript,
-    },
+    poly::eq_poly::EqPolynomial,
+    utils::{errors::ProofVerifyError, math::Math, transcript::Transcript},
 };
 
 /// The Twist+Shout paper gives two different prover algorithms for the read-checking
@@ -142,9 +136,9 @@ impl<F: JoltField, ProofTranscript: Transcript> ReadWriteCheckingProof<F, ProofT
         assert_eq!(
             eq_eval_cycle * self.ra_claim * self.val_claim
                 + z * eq_eval_address
-                * eq_eval_cycle
-                * self.wa_claim
-                * (self.wv_claim - self.val_claim),
+                    * eq_eval_cycle
+                    * self.wa_claim
+                    * (self.wv_claim - self.val_claim),
             sumcheck_claim,
             "Read/write-checking sumcheck failed"
         );

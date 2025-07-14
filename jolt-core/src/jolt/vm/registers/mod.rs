@@ -5,9 +5,7 @@ pub use prover::*;
 mod verifier;
 
 use crate::{
-    field::JoltField,
-    subprotocols::sumcheck::SumcheckInstanceProof,
-    utils::transcript::Transcript,
+    field::JoltField, subprotocols::sumcheck::SumcheckInstanceProof, utils::transcript::Transcript,
 };
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 

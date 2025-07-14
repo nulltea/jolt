@@ -1,5 +1,5 @@
-use std::fmt::Display;
 use crate::utils::uninterleave_bits;
+use std::fmt::Display;
 
 /// A bitvector type used to represent a (substring of a) lookup index.
 #[derive(Clone, Copy, Debug)]

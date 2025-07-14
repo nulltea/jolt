@@ -3,7 +3,9 @@ use crate::poly::commitment::commitment_scheme::CommitmentScheme;
 use crate::poly::opening_proof::VerifierOpeningAccumulator;
 use crate::poly::sparse_interleaved_poly::SparseInterleavedPolynomial;
 use crate::subprotocols::grand_product::quark::QuarkGrandProductBase;
-use crate::subprotocols::grand_product::{BatchedGrandProductLayerProof, BatchedGrandProductProof, BatchedGrandProductVerifier};
+use crate::subprotocols::grand_product::{
+    BatchedGrandProductLayerProof, BatchedGrandProductProof, BatchedGrandProductVerifier,
+};
 use crate::subprotocols::QuarkHybridLayerDepth;
 use crate::utils::transcript::Transcript;
 

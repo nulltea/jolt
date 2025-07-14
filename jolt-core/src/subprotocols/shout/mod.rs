@@ -1,29 +1,28 @@
+mod lookup_bits;
 #[cfg(feature = "prover")]
 pub mod prover;
 #[cfg(feature = "prover")]
 pub mod sparse_dense;
-mod lookup_bits;
+pub use lookup_bits::*;
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
-pub use lookup_bits::*;
 
-use strum::IntoEnumIterator;
 #[cfg(feature = "prover")]
 pub use prover::*;
+use strum::IntoEnumIterator;
 
-use crate::{field::JoltField, into_optimal_iter, optimal_iter, optimal_iter_mut, poly::{
-    multilinear_polynomial::{
-        MultilinearPolynomial,
-    },
-}, utils::{
-    errors::ProofVerifyError,
-    math::Math,
-    transcript::{Transcript},
-}};
 use crate::jolt::lookup_table::LookupTables;
 use crate::poly::eq_poly::EqPolynomial;
 use crate::poly::multilinear_polynomial::{BindingOrder, PolynomialBinding, PolynomialEvaluation};
-use crate::subprotocols::sumcheck::{BatchableSumcheckInstance, BatchedSumcheck, SumcheckInstanceProof};
+use crate::subprotocols::sumcheck::{
+    BatchableSumcheckInstance, BatchedSumcheck, SumcheckInstanceProof,
+};
+use crate::{
+    field::JoltField,
+    into_optimal_iter, join_if_rayon, optimal_iter, optimal_iter_mut, optimal_reduce,
+    poly::multilinear_polynomial::MultilinearPolynomial,
+    utils::{errors::ProofVerifyError, math::Math, transcript::Transcript},
+};
 
 pub struct ShoutProof<F: JoltField, ProofTranscript: Transcript> {
     sumcheck_proof: SumcheckInstanceProof<F, ProofTranscript>,
@@ -94,9 +93,8 @@ impl<F: JoltField> BooleanityVerifierState<F> {
     }
 }
 
-
 impl<F: JoltField, ProofTranscript: Transcript> BatchableSumcheckInstance<F, ProofTranscript>
-for ShoutSumcheck<F>
+    for ShoutSumcheck<F>
 {
     #[inline(always)]
     fn degree(&self) -> usize {
@@ -132,10 +130,11 @@ for ShoutSumcheck<F>
     fn compute_prover_message(&self, _: usize) -> Vec<F> {
         let ShoutProverState { ra, val, z, .. } = self.prover_state.as_ref().unwrap();
 
-        let degree = <ShoutSumcheck<F> as BatchableSumcheckInstance<F, ProofTranscript>>::degree(self);
+        let degree =
+            <ShoutSumcheck<F> as BatchableSumcheckInstance<F, ProofTranscript>>::degree(self);
 
-        let univariate_poly_evals: [F; 2] = into_optimal_iter!((0..ra.len() / 2))
-            .map(|i| {
+        let univariate_poly_evals: [F; 2] = optimal_reduce!(
+            into_optimal_iter!((0..ra.len() / 2)).map(|i| {
                 let ra_evals = ra.sumcheck_evals(i, degree, BindingOrder::LowToHigh);
                 let val_evals = val.sumcheck_evals(i, degree, BindingOrder::LowToHigh);
 
@@ -143,21 +142,18 @@ for ShoutSumcheck<F>
                     ra_evals[0] * (*z + val_evals[0]),
                     ra_evals[1] * (*z + val_evals[1]),
                 ]
-            })
-            .reduce(
-                || [F::zero(); 2],
-                |running, new| [running[0] + new[0], running[1] + new[1]],
-            );
+            }),
+            || [F::zero(); 2],
+            |running, new| [running[0] + new[0], running[1] + new[1]]
+        );
         univariate_poly_evals.to_vec()
     }
 
     #[tracing::instrument(skip_all)]
     fn bind(&mut self, r_j: F, _: usize) {
         let ShoutProverState { ra, val, .. } = self.prover_state.as_mut().unwrap();
-        rayon::join(
-            || ra.bind_parallel(r_j, BindingOrder::LowToHigh),
-            || val.bind_parallel(r_j, BindingOrder::LowToHigh),
-        );
+        join_if_rayon!(|| ra.bind_parallel(r_j, BindingOrder::LowToHigh), || val
+            .bind_parallel(r_j, BindingOrder::LowToHigh));
     }
 
     fn cache_openings(&mut self) {
@@ -268,10 +264,10 @@ pub fn verify_sparse_dense_shout<
         eq_eval_cycle
             * ra_claims.iter().product::<F>()
             * flag_claims
-            .iter()
-            .zip(val_evals.iter())
-            .map(|(flag, val)| *flag * val)
-            .sum::<F>(),
+                .iter()
+                .zip(val_evals.iter())
+                .map(|(flag, val)| *flag * val)
+                .sum::<F>(),
         sumcheck_claim,
         "Read-checking sumcheck failed"
     );
@@ -280,7 +276,7 @@ pub fn verify_sparse_dense_shout<
 }
 
 impl<F: JoltField, ProofTranscript: Transcript> BatchableSumcheckInstance<F, ProofTranscript>
-for BooleanitySumcheck<F>
+    for BooleanitySumcheck<F>
 {
     fn degree(&self) -> usize {
         3
@@ -325,61 +321,60 @@ for BooleanitySumcheck<F>
             // First log(K) rounds of sumcheck
             let m = round + 1;
 
-            let univariate_poly_evals: [F; DEGREE] = into_optimal_iter!((0..B.len() / 2))
-                .map(|k_prime| {
+            let univariate_poly_evals: [F; DEGREE] = optimal_reduce!(
+                into_optimal_iter!((0..B.len() / 2)).map(|k_prime| {
                     let B_evals = B.sumcheck_evals(k_prime, DEGREE, BindingOrder::LowToHigh);
-                    let inner_sum = optimal_iter!(G[k_prime << m..(k_prime + 1) << m])
-                        .enumerate()
-                        .map(|(k, &G_k)| {
-                            // Since we're binding variables from low to high, k_m is the high bit
-                            let k_m = k >> (m - 1);
-                            // We then index into F using (k_{m-1}, ..., k_1)
-                            let F_k = F[k % (1 << (m - 1))];
-                            // G_times_F := G[k] * F[k_1, ...., k_{m-1}]
-                            let G_times_F = G_k * F_k;
-                            // For c \in {0, 2, 3} compute:
-                            //    G[k] * (F[k_1, ...., k_{m-1}, c]^2 - F[k_1, ...., k_{m-1}, c])
-                            //    = G_times_F * (eq(k_m, c)^2 * F[k_1, ...., k_{m-1}] - eq(k_m, c))
-                            [
-                                G_times_F * (eq_km_c_squared[k_m][0] * F_k - eq_km_c[k_m][0]),
-                                G_times_F * (eq_km_c_squared[k_m][1] * F_k - eq_km_c[k_m][1]),
-                                G_times_F * (eq_km_c_squared[k_m][2] * F_k - eq_km_c[k_m][2]),
-                            ]
-                        })
-                        .reduce(
-                            || [F::zero(); DEGREE],
-                            |running, new| {
+                    let inner_sum = optimal_reduce!(
+                        optimal_iter!(G[k_prime << m..(k_prime + 1) << m])
+                            .enumerate()
+                            .map(|(k, &G_k)| {
+                                // Since we're binding variables from low to high, k_m is the high bit
+                                let k_m = k >> (m - 1);
+                                // We then index into F using (k_{m-1}, ..., k_1)
+                                let F_k = F[k % (1 << (m - 1))];
+                                // G_times_F := G[k] * F[k_1, ...., k_{m-1}]
+                                let G_times_F = G_k * F_k;
+                                // For c \in {0, 2, 3} compute:
+                                //    G[k] * (F[k_1, ...., k_{m-1}, c]^2 - F[k_1, ...., k_{m-1}, c])
+                                //    = G_times_F * (eq(k_m, c)^2 * F[k_1, ...., k_{m-1}] - eq(k_m, c))
                                 [
-                                    running[0] + new[0],
-                                    running[1] + new[1],
-                                    running[2] + new[2],
+                                    G_times_F * (eq_km_c_squared[k_m][0] * F_k - eq_km_c[k_m][0]),
+                                    G_times_F * (eq_km_c_squared[k_m][1] * F_k - eq_km_c[k_m][1]),
+                                    G_times_F * (eq_km_c_squared[k_m][2] * F_k - eq_km_c[k_m][2]),
                                 ]
-                            },
-                        );
+                            }),
+                        || [F::zero(); DEGREE],
+                        |running, new| {
+                            [
+                                running[0] + new[0],
+                                running[1] + new[1],
+                                running[2] + new[2],
+                            ]
+                        }
+                    );
 
                     [
                         B_evals[0] * inner_sum[0],
                         B_evals[1] * inner_sum[1],
                         B_evals[2] * inner_sum[2],
                     ]
-                })
-                .reduce(
-                    || [F::zero(); DEGREE],
-                    |running, new| {
-                        [
-                            running[0] + new[0],
-                            running[1] + new[1],
-                            running[2] + new[2],
-                        ]
-                    },
-                );
+                }),
+                || [F::zero(); DEGREE],
+                |running, new| {
+                    [
+                        running[0] + new[0],
+                        running[1] + new[1],
+                        running[2] + new[2],
+                    ]
+                }
+            );
 
             univariate_poly_evals.to_vec()
         } else {
             // Last log(T) rounds of sumcheck
 
-            let mut univariate_poly_evals: [F; 3] = into_optimal_iter!((0..D.len() / 2))
-                .map(|i| {
+            let mut univariate_poly_evals: [F; 3] = optimal_reduce!(
+                into_optimal_iter!((0..D.len() / 2)).map(|i| {
                     let D_evals = D.sumcheck_evals(i, DEGREE, BindingOrder::LowToHigh);
                     let H_evals =
                         H.as_ref()
@@ -391,17 +386,16 @@ for BooleanitySumcheck<F>
                         D_evals[1] * (H_evals[1] * H_evals[1] - H_evals[1]),
                         D_evals[2] * (H_evals[2] * H_evals[2] - H_evals[2]),
                     ]
-                })
-                .reduce(
-                    || [F::zero(); 3],
-                    |running, new| {
-                        [
-                            running[0] + new[0],
-                            running[1] + new[1],
-                            running[2] + new[2],
-                        ]
-                    },
-                );
+                }),
+                || [F::zero(); 3],
+                |running, new| {
+                    [
+                        running[0] + new[0],
+                        running[1] + new[1],
+                        running[2] + new[2],
+                    ]
+                }
+            );
 
             let eq_r_r = B.final_sumcheck_claim();
             univariate_poly_evals = [
@@ -443,19 +437,18 @@ for BooleanitySumcheck<F>
             if round == K.log_2() - 1 {
                 // Transition point; initialize H
                 *H = Some(MultilinearPolynomial::from(
-                    optimal_iter!(read_addresses).map(|&k| F[k]).collect::<Vec<_>>(),
+                    optimal_iter!(read_addresses)
+                        .map(|&k| F[k])
+                        .collect::<Vec<_>>(),
                 ));
             }
         } else {
             // Last log(T) rounds of sumcheck
-            rayon::join(
-                || D.bind_parallel(r_j, BindingOrder::LowToHigh),
-                || {
-                    H.as_mut()
-                        .unwrap()
-                        .bind_parallel(r_j, BindingOrder::LowToHigh)
-                },
-            );
+            join_if_rayon!(|| D.bind_parallel(r_j, BindingOrder::LowToHigh), || {
+                H.as_mut()
+                    .unwrap()
+                    .bind_parallel(r_j, BindingOrder::LowToHigh)
+            });
         }
     }
 

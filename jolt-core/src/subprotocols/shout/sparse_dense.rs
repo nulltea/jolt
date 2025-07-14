@@ -1,3 +1,5 @@
+use crate::subprotocols::shout::LookupBits;
+use crate::subprotocols::sumcheck::SumcheckInstanceProof;
 use crate::{
     field::JoltField,
     jolt::{
@@ -19,15 +21,12 @@ use crate::{
         math::Math,
         thread::{drop_in_background_thread, unsafe_allocate_zero_vec, unsafe_zero_slice},
         transcript::{AppendToTranscript, Transcript},
-        uninterleave_bits,
     },
 };
 use rayon::{prelude::*, slice::Iter};
-use std::{fmt::Display, ops::Index};
+use std::ops::Index;
 use strum::{EnumCount, IntoEnumIterator};
 use tracer::instruction::RV32IMCycle;
-use crate::subprotocols::shout::LookupBits;
-use crate::subprotocols::sumcheck::SumcheckInstanceProof;
 
 /// Table containing the evaluations `EQ(x_1, ..., x_j, r_1, ..., r_j)`,
 /// built up incrementally as we receive random challenges `r_j` over the
@@ -545,10 +544,10 @@ pub fn prove_sparse_dense_shout<
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::subprotocols::shout::verify_sparse_dense_shout;
     use crate::utils::transcript::KeccakTranscript;
     use ark_bn254::Fr;
     use rand::{rngs::StdRng, RngCore, SeedableRng};
-    use crate::subprotocols::shout::verify_sparse_dense_shout;
 
     const WORD_SIZE: usize = 8;
     const LOG_T: usize = 8;

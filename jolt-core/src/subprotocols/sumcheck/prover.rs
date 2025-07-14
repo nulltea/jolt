@@ -7,15 +7,17 @@ use crate::poly::multilinear_polynomial::{
     BindingOrder, MultilinearPolynomial, PolynomialBinding, PolynomialEvaluation,
 };
 use crate::poly::spartan_interleaved_poly::SpartanInterleavedPolynomial;
-use crate::poly::split_eq_poly::{GruenSplitEqPolynomial, SplitEqPolynomial};
+use crate::poly::split_eq_poly::GruenSplitEqPolynomial;
 use crate::poly::unipoly::{CompressedUniPoly, UniPoly};
 use crate::r1cs::builder::Constraint;
+use crate::subprotocols::sumcheck::{
+    BatchableSumcheckInstance, BatchedSumcheck, SumcheckInstanceProof,
+};
 use crate::utils::mul_0_optimized;
 use crate::utils::small_value::svo_helpers::process_svo_sumcheck_rounds;
 use crate::utils::thread::drop_in_background_thread;
 use crate::utils::transcript::{AppendToTranscript, Transcript};
 use rayon::prelude::*;
-use crate::subprotocols::sumcheck::{BatchableSumcheckInstance, BatchedSumcheck, Bindable, SumcheckInstanceProof};
 
 /// Implements the standard technique for batching parallel sumchecks to reduce
 /// verifier cost and proof size.

@@ -1,18 +1,19 @@
-use super::{
-    dense_interleaved_poly::DenseInterleavedPolynomial, dense_mlpoly::DensePolynomial,
-};
+use super::{dense_interleaved_poly::DenseInterleavedPolynomial, dense_mlpoly::DensePolynomial};
 #[cfg(feature = "prover")]
 use super::{split_eq_poly::SplitEqPolynomial, unipoly::UniPoly};
 #[cfg(feature = "prover")]
-use crate::field::{OptimizedMul};
+use crate::field::OptimizedMul;
+use crate::subprotocols::grand_product::BatchedGrandProductLayer;
 #[cfg(feature = "prover")]
 use crate::utils::math::Math;
-use crate::{optimal_iter, optimal_iter_mut, field::JoltField, subprotocols::{
-    sumcheck::{BatchedCubicSumcheck, Bindable},
-}, utils::transcript::Transcript};
+use crate::{
+    field::JoltField,
+    optimal_iter, optimal_iter_mut,
+    subprotocols::sumcheck::{BatchedCubicSumcheck, Bindable},
+    utils::transcript::Transcript,
+};
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
-use crate::subprotocols::grand_product::BatchedGrandProductLayer;
 
 #[derive(Default, Debug, Clone, Copy, PartialEq)]
 pub struct SparseCoefficient<T> {
@@ -218,8 +219,7 @@ impl<F: JoltField> SparseInterleavedPolynomial<F> {
                 coalesced: Some(coalesced.layer_output()),
             }
         } else {
-            let coeffs: Vec<Vec<_>> = optimal_iter!(self
-                .coeffs)
+            let coeffs: Vec<Vec<_>> = optimal_iter!(self.coeffs)
                 .map(|segment| {
                     let mut output_segment: Vec<SparseCoefficient<F>> =
                         Vec::with_capacity(segment.len());
@@ -284,107 +284,106 @@ impl<F: JoltField> Bindable<F> for SparseInterleavedPolynomial<F> {
             coalesced.bind(r);
             self.dense_len = padded_len / 2;
         } else {
-            optimal_iter_mut!(self.coeffs)
-                .for_each(|segment: &mut Vec<SparseCoefficient<F>>| {
-                    let mut next_left_node_to_process = 0;
-                    let mut next_right_node_to_process = 0;
-                    let mut bound_index = 0;
+            optimal_iter_mut!(self.coeffs).for_each(|segment: &mut Vec<SparseCoefficient<F>>| {
+                let mut next_left_node_to_process = 0;
+                let mut next_right_node_to_process = 0;
+                let mut bound_index = 0;
 
-                    for j in 0..segment.len() {
-                        let current = segment[j];
-                        if current.index % 2 == 0 && current.index < next_left_node_to_process {
-                            // This left node was already bound with its sibling in a previous iteration
-                            continue;
-                        }
-                        if current.index % 2 == 1 && current.index < next_right_node_to_process {
-                            // This right node was already bound with its sibling in a previous iteration
-                            continue;
-                        }
-
-                        let neighbors = [
-                            segment
-                                .get(j + 1)
-                                .cloned()
-                                .unwrap_or((current.index + 1, F::one()).into()),
-                            segment
-                                .get(j + 2)
-                                .cloned()
-                                .unwrap_or((current.index + 2, F::one()).into()),
-                        ];
-                        let find_neighbor = |query_index: usize| {
-                            neighbors
-                                .iter()
-                                .find_map(|neighbor| {
-                                    if neighbor.index == query_index {
-                                        Some(neighbor.value)
-                                    } else {
-                                        None
-                                    }
-                                })
-                                .unwrap_or(F::one())
-                        };
-
-                        match current.index % 4 {
-                            0 => {
-                                // Find sibling left node
-                                let sibling_value: F = find_neighbor(current.index + 2);
-                                segment[bound_index] = (
-                                    current.index / 2,
-                                    current.value + r * (sibling_value - current.value),
-                                )
-                                    .into();
-                                next_left_node_to_process = current.index + 4;
-                            }
-                            1 => {
-                                // Edge case: If this right node's neighbor is not 1 and has _not_
-                                // been bound yet, we need to bind the neighbor first to preserve
-                                // the monotonic ordering of the bound layer.
-                                if next_left_node_to_process <= current.index + 1 {
-                                    let left_neighbor: F = find_neighbor(current.index + 1);
-                                    if !left_neighbor.is_one() {
-                                        segment[bound_index] = (
-                                            current.index / 2,
-                                            F::one() + r * (left_neighbor - F::one()),
-                                        )
-                                            .into();
-                                        bound_index += 1;
-                                    }
-                                    next_left_node_to_process = current.index + 3;
-                                }
-
-                                // Find sibling right node
-                                let sibling_value: F = find_neighbor(current.index + 2);
-                                segment[bound_index] = (
-                                    current.index / 2 + 1,
-                                    current.value + r * (sibling_value - current.value),
-                                )
-                                    .into();
-                                next_right_node_to_process = current.index + 4;
-                            }
-                            2 => {
-                                // Sibling left node wasn't encountered in previous iteration,
-                                // so sibling must have value 1.
-                                segment[bound_index] = (
-                                    current.index / 2 - 1,
-                                    F::one() + r * (current.value - F::one()),
-                                )
-                                    .into();
-                                next_left_node_to_process = current.index + 2;
-                            }
-                            3 => {
-                                // Sibling right node wasn't encountered in previous iteration,
-                                // so sibling must have value 1.
-                                segment[bound_index] =
-                                    (current.index / 2, F::one() + r * (current.value - F::one()))
-                                        .into();
-                                next_right_node_to_process = current.index + 2;
-                            }
-                            _ => unreachable!("?_?"),
-                        }
-                        bound_index += 1;
+                for j in 0..segment.len() {
+                    let current = segment[j];
+                    if current.index % 2 == 0 && current.index < next_left_node_to_process {
+                        // This left node was already bound with its sibling in a previous iteration
+                        continue;
                     }
-                    segment.truncate(bound_index);
-                });
+                    if current.index % 2 == 1 && current.index < next_right_node_to_process {
+                        // This right node was already bound with its sibling in a previous iteration
+                        continue;
+                    }
+
+                    let neighbors = [
+                        segment
+                            .get(j + 1)
+                            .cloned()
+                            .unwrap_or((current.index + 1, F::one()).into()),
+                        segment
+                            .get(j + 2)
+                            .cloned()
+                            .unwrap_or((current.index + 2, F::one()).into()),
+                    ];
+                    let find_neighbor = |query_index: usize| {
+                        neighbors
+                            .iter()
+                            .find_map(|neighbor| {
+                                if neighbor.index == query_index {
+                                    Some(neighbor.value)
+                                } else {
+                                    None
+                                }
+                            })
+                            .unwrap_or(F::one())
+                    };
+
+                    match current.index % 4 {
+                        0 => {
+                            // Find sibling left node
+                            let sibling_value: F = find_neighbor(current.index + 2);
+                            segment[bound_index] = (
+                                current.index / 2,
+                                current.value + r * (sibling_value - current.value),
+                            )
+                                .into();
+                            next_left_node_to_process = current.index + 4;
+                        }
+                        1 => {
+                            // Edge case: If this right node's neighbor is not 1 and has _not_
+                            // been bound yet, we need to bind the neighbor first to preserve
+                            // the monotonic ordering of the bound layer.
+                            if next_left_node_to_process <= current.index + 1 {
+                                let left_neighbor: F = find_neighbor(current.index + 1);
+                                if !left_neighbor.is_one() {
+                                    segment[bound_index] = (
+                                        current.index / 2,
+                                        F::one() + r * (left_neighbor - F::one()),
+                                    )
+                                        .into();
+                                    bound_index += 1;
+                                }
+                                next_left_node_to_process = current.index + 3;
+                            }
+
+                            // Find sibling right node
+                            let sibling_value: F = find_neighbor(current.index + 2);
+                            segment[bound_index] = (
+                                current.index / 2 + 1,
+                                current.value + r * (sibling_value - current.value),
+                            )
+                                .into();
+                            next_right_node_to_process = current.index + 4;
+                        }
+                        2 => {
+                            // Sibling left node wasn't encountered in previous iteration,
+                            // so sibling must have value 1.
+                            segment[bound_index] = (
+                                current.index / 2 - 1,
+                                F::one() + r * (current.value - F::one()),
+                            )
+                                .into();
+                            next_left_node_to_process = current.index + 2;
+                        }
+                        3 => {
+                            // Sibling right node wasn't encountered in previous iteration,
+                            // so sibling must have value 1.
+                            segment[bound_index] =
+                                (current.index / 2, F::one() + r * (current.value - F::one()))
+                                    .into();
+                            next_right_node_to_process = current.index + 2;
+                        }
+                        _ => unreachable!("?_?"),
+                    }
+                    bound_index += 1;
+                }
+                segment.truncate(bound_index);
+            });
 
             self.dense_len /= 2;
             if (self.dense_len / self.batch_size()) == 2 {

@@ -7,7 +7,7 @@ use crate::jolt::vm::instruction_lookups::LookupsProof;
 use crate::jolt::vm::ram::RAMTwistProof;
 use crate::jolt::vm::registers::RegistersTwistProof;
 use crate::jolt::vm::rv32im_vm::Serializable;
-use crate::jolt::vm::{JoltCommon, JoltProof, JoltProverPreprocessing, JoltSharedPreprocessing};
+use crate::jolt::vm::{JoltCommon, JoltProof, JoltProverPreprocessing};
 use crate::msm::icicle;
 use crate::poly::commitment::commitment_scheme::CommitmentScheme;
 use crate::poly::opening_proof::ProverOpeningAccumulator;
