@@ -2057,9 +2057,9 @@ dependencies = [
 name = "jolt-verifier"
 version = "0.1.0"
 dependencies = [
+ "ark-serialize 0.5.0",
  "common",
  "jolt-core",
- "tracer",
 ]
 
 [[package]]
