@@ -120,7 +120,7 @@ impl<F: JoltField> ReadCheckingSumcheck<F> {
                     sm.get_opening_point(OpeningsKeys::SpartanZ(JoltR1CSInputs::Imm))
                         .unwrap()
                         .r,
-                    OpeningsKeys::BytecodeStage1Ra,
+                    OpeningsKeys::BytecodeRa(0),
                 )
             }
             ReadCheckingValType::Stage2 => {
@@ -135,7 +135,7 @@ impl<F: JoltField> ReadCheckingSumcheck<F> {
                     sm.get_opening_point(OpeningsKeys::RegistersReadWriteInc)
                         .unwrap()
                         .r,
-                    OpeningsKeys::BytecodeStage2Ra,
+                    OpeningsKeys::BytecodeRa(0),
                 )
             }
             ReadCheckingValType::Stage3 => {
@@ -150,7 +150,7 @@ impl<F: JoltField> ReadCheckingSumcheck<F> {
                     sm.get_opening_point(OpeningsKeys::RegistersValEvaluationInc)
                         .unwrap()
                         .r,
-                    OpeningsKeys::BytecodeStage3Ra,
+                    OpeningsKeys::BytecodeRa(0),
                 )
             }
         }
