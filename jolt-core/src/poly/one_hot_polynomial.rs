@@ -59,8 +59,6 @@ pub struct OneHotSumcheckState<F: JoltField> {
     /// D stores eq(r', j) using Gruen optimization, see Equation (54)
     pub D: GruenSplitEqPolynomial<F>,
     /// Original B stores eq(r, k), see Equation (53)
-    pub B_org: MultilinearPolynomial<F>,
-    /// Original D stores eq(r', j), see Equation (54)
     pub D_org: MultilinearPolynomial<F>,
     /// F will maintain an array that, at the end of sumcheck round m, has size 2^m
     /// and stores all 2^m values eq((k_1, ..., k_m), (r_1, ..., r_m))
@@ -81,7 +79,6 @@ impl<F: JoltField> OneHotSumcheckState<F> {
         Self {
             B: GruenSplitEqPolynomial::new_rev(r_address), // Equation (53)
             D: GruenSplitEqPolynomial::new_rev(r_cycle),   // Equation (54)
-            B_org: MultilinearPolynomial::from(EqPolynomial::evals(r_address)), // Original B
             D_org: MultilinearPolynomial::from(EqPolynomial::evals(r_cycle)),   // Original D
             F,
             num_variables_bound: 0,
@@ -232,7 +229,6 @@ impl<F: JoltField> OneHotPolynomialProverOpening<F> {
         if round < self.polynomial.K.log_2() {
             if num_variables_bound <= round {
                 shared_eq.B.bind(r);
-                shared_eq.B_org.bind_parallel(r, BindingOrder::HighToLow);
                 // Update F for this round (see Equation 55)
                 shared_eq.F.update(r);
 
@@ -255,7 +251,6 @@ impl<F: JoltField> OneHotPolynomialProverOpening<F> {
 
             if num_variables_bound <= round {
                 shared_eq.D.bind(r);
-                shared_eq.D_org.bind_parallel(r, BindingOrder::HighToLow);
                 shared_eq.num_variables_bound += 1;
             }
 
