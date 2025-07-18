@@ -53,9 +53,7 @@ impl<F: JoltField> HammingWeightSumcheck<F> {
         let ra = F
             .into_iter()
             .map(MultilinearPolynomial::from)
-            .collect::<Vec<_>>()
-            .try_into()
-            .unwrap();
+            .collect::<Vec<_>>();
         Self {
             gamma: gamma_powers,
             log_K_chunk,
@@ -82,9 +80,7 @@ impl<F: JoltField> HammingWeightSumcheck<F> {
         let log_K_chunk = log_K.div_ceil(d);
         let ra_claims = (0..d)
             .map(|i| sm.get_opening(OpeningsKeys::BytecodeHammingWeightRa(i)))
-            .collect::<Vec<F>>()
-            .try_into()
-            .unwrap();
+            .collect::<Vec<F>>();
         let r_cycle = sm
             .get_opening_point(OpeningsKeys::SpartanZ(JoltR1CSInputs::LookupOutput))
             .unwrap()

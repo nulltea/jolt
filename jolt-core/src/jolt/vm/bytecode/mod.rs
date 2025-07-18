@@ -12,10 +12,7 @@ use crate::utils::math::Math;
 use crate::{
     field::JoltField,
     jolt::witness::CommittedPolynomials,
-    poly::{
-        commitment::commitment_scheme::CommitmentScheme, eq_poly::EqPolynomial,
-        multilinear_polynomial::MultilinearPolynomial,
-    },
+    poly::{commitment::commitment_scheme::CommitmentScheme, eq_poly::EqPolynomial},
     utils::{thread::unsafe_allocate_zero_vec, transcript::Transcript},
 };
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
