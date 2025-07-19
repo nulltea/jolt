@@ -14,8 +14,8 @@ use rayon::prelude::*;
 
 #[derive(Default, Debug, Clone, Copy, PartialEq)]
 pub struct SparseCoefficient<T> {
-    pub(crate) index: usize,
-    pub(crate) value: T,
+    pub index: usize,
+    pub value: T,
 }
 
 impl<T> From<(usize, T)> for SparseCoefficient<T> {
@@ -125,7 +125,11 @@ impl<F: JoltField> SparseInterleavedPolynomial<F> {
         DensePolynomial::new_padded(self.coalesce())
     }
 
-    #[tracing::instrument(skip_all, name = "SparseInterleavedPolynomial::coalesce")]
+    #[tracing::instrument(
+        skip_all,
+        name = "SparseInterleavedPolynomial::coalesce",
+        level = "trace"
+    )]
     /// Coalesces a `SparseInterleavedPolynomial` into a `DenseInterleavedPolynomial`.
     pub fn coalesce(&self) -> Vec<F> {
         if let Some(coalesced) = &self.coalesced {
@@ -207,7 +211,11 @@ impl<F: JoltField> SparseInterleavedPolynomial<F> {
     ///      /\        /\        /\        /\
     ///     /  \      /  \      /  \      /  \
     ///    L0  R0    L1  R1    L2  R2    L3  R3   <- This layer
-    #[tracing::instrument(skip_all, name = "SparseInterleavedPolynomial::layer_output")]
+    #[tracing::instrument(
+        skip_all,
+        name = "SparseInterleavedPolynomial::layer_output",
+        level = "trace"
+    )]
     pub fn layer_output(&self) -> Self {
         if let Some(coalesced) = &self.coalesced {
             Self {
@@ -273,7 +281,7 @@ impl<F: JoltField> Bindable<F> for SparseInterleavedPolynomial<F> {
     ///
     /// If `self` is not coalesced, we basically do the same thing but with the
     /// sparse vectors in `self.coeffs`, and many more cases to check 😬
-    #[tracing::instrument(skip_all, name = "SparseInterleavedPolynomial::bind")]
+    #[tracing::instrument(skip_all, name = "SparseInterleavedPolynomial::bind", level = "trace")]
     fn bind(&mut self, r: F) {
         #[cfg(test)]
         let (mut left_before_binding, mut right_before_binding) = self.uninterleave();
@@ -284,7 +292,7 @@ impl<F: JoltField> Bindable<F> for SparseInterleavedPolynomial<F> {
             self.dense_len = padded_len / 2;
         } else {
             self.coeffs
-                .par_iter_mut()
+                .iter_mut()
                 .for_each(|segment: &mut Vec<SparseCoefficient<F>>| {
                     let mut next_left_node_to_process = 0;
                     let mut next_right_node_to_process = 0;
@@ -449,7 +457,11 @@ impl<F: JoltField, ProofTranscript: Transcript> BatchedCubicSumcheck<F, ProofTra
     ///
     /// If `self` is not coalesced, we basically do the same thing but with with the
     /// sparse vectors in `self.coeffs`, some fancy optimizations, and many more cases to check 😬
-    #[tracing::instrument(skip_all, name = "SparseInterleavedPolynomial::compute_cubic")]
+    #[tracing::instrument(
+        skip_all,
+        name = "SparseInterleavedPolynomial::compute_cubic",
+        level = "trace"
+    )]
     fn compute_cubic(&self, eq_poly: &SplitEqPolynomial<F>, previous_round_claim: F) -> UniPoly<F> {
         if let Some(coalesced) = &self.coalesced {
             return BatchedCubicSumcheck::<F, ProofTranscript>::compute_cubic(
@@ -459,9 +471,18 @@ impl<F: JoltField, ProofTranscript: Transcript> BatchedCubicSumcheck<F, ProofTra
             );
         }
 
+        // for segment in &self.coeffs {
+        //     let values = segment
+        //         .par_iter()
+        //         .map(|coeff| coeff.value)
+        //         .collect::<Vec<_>>();
+        //     tracing::info!("values: {:?}", (&values[..2], &values[values.len() - 2..]));
+        // }
+
         // We use the Dao-Thaler optimization for the EQ polynomial, so there are two cases we
         // must handle. For details, refer to Section 2.2 of https://eprint.iacr.org/2024/1210.pdf
         let cubic_evals = if eq_poly.E1_len == 1 {
+            tracing::info!("eq_poly.E1_len == 1");
             // If `eq_poly.E1` has been fully bound, we compute the cubic polynomial as we
             // would without the Dao-Thaler optimization, using the standard linear-time
             // sumcheck algorithm with optimizations for sparsity.

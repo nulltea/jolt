@@ -53,7 +53,7 @@ impl<F: JoltField> PolynomialEvaluation<F> for IdentityPolynomial<F> {
         let len = r.len();
         assert_eq!(len, self.num_vars);
         (0..len)
-            .map(|i| F::from_u64((len - i - 1).pow2() as u64) * r[i])
+            .map(|i| F::from_u64_unchecked((len - i - 1).pow2() as u64) * r[i])
             .sum()
     }
 
@@ -71,7 +71,7 @@ impl<F: JoltField> PolynomialEvaluation<F> for IdentityPolynomial<F> {
         );
 
         let mut evals = vec![F::zero(); degree];
-        evals[0] = self.bound_value + F::from_u64((index as u64) << (1 + self.num_bound_vars));
+        evals[0] = self.bound_value + F::from_u64_unchecked((index as u64) << (1 + self.num_bound_vars));
         let m = F::from_u32(1 << self.num_bound_vars);
         let mut eval = evals[0] + m;
         for i in 1..degree {

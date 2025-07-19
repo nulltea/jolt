@@ -18,6 +18,7 @@ use rand_core::{CryptoRng, RngCore};
 use std::borrow::Borrow;
 use std::sync::Arc;
 use std::{iter, marker::PhantomData};
+use ark_ff::Field;
 
 use super::{
     commitment_scheme::CommitmentScheme,
@@ -179,7 +180,7 @@ where
 
     // squares of x = [x, x^2, .. x^{2^k}, .. x^{2^num_vars}]
     let squares_of_x: Vec<_> =
-        iter::successors(Some(x_challenge), |&x| Some(JoltField::square(&x)))
+        iter::successors(Some(x_challenge), |&x| Some(x.square()))
             .take(num_vars + 1)
             .collect();
 

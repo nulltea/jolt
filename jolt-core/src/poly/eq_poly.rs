@@ -25,7 +25,7 @@ impl<F: JoltField> EqPolynomial<F> {
             .product()
     }
 
-    #[tracing::instrument(skip_all, name = "EqPolynomial::evals")]
+    #[tracing::instrument(skip_all, name = "EqPolynomial::evals", level = "trace")]
     /// Computes the table of coefficients: `{eq(r, x) for all x in {0, 1}^n}`
     pub fn evals(r: &[F]) -> Vec<F> {
         match r.len() {
@@ -34,7 +34,7 @@ impl<F: JoltField> EqPolynomial<F> {
         }
     }
 
-    #[tracing::instrument(skip_all, name = "EqPolynomial::evals_cached")]
+    #[tracing::instrument(skip_all, name = "EqPolynomial::evals_cached", level = "trace")]
     /// Computes the table of coefficients like `evals`, but also caches the intermediate results
     ///
     /// In other words, computes `{eq(r[i..], x) for all x in {0, 1}^{n - i}}` and for all `i in
@@ -116,7 +116,7 @@ impl<F: JoltField> EqPolynomial<F> {
     ///     `scaling_factor * eq(r, x) for all x in {0, 1}^n`,
     ///
     /// computing biggest layers of the dynamic programming tree in parallel.
-    #[tracing::instrument(skip_all, "EqPolynomial::evals_parallel")]
+    #[tracing::instrument(skip_all, name = "EqPolynomial::evals_parallel", level = "trace")]
     pub fn evals_parallel(r: &[F], scaling_factor: Option<F>) -> Vec<F> {
         let final_size = r.len().pow2();
         let mut evals: Vec<F> = unsafe_allocate_zero_vec(final_size);
@@ -154,7 +154,7 @@ impl<F: JoltField> EqPlusOnePolynomial<F> {
         let l = self.x.len();
         let x = &self.x;
         assert!(y.len() == l);
-        let one = F::from_u64(1_u64);
+        let one = F::from_u64_unchecked(1_u64);
 
         /* If y+1 = x, then the two bit vectors are of the following form.
             Let k be the longest suffix of 1s in x.
@@ -179,7 +179,7 @@ impl<F: JoltField> EqPlusOnePolynomial<F> {
             .sum()
     }
 
-    #[tracing::instrument(skip_all, "EqPlusOnePolynomial::evals")]
+    #[tracing::instrument(skip_all, name = "EqPlusOnePolynomial::evals", level = "trace")]
     pub fn evals(r: &[F], scaling_factor: Option<F>) -> (Vec<F>, Vec<F>) {
         let ell = r.len();
         let mut eq_evals: Vec<F> = unsafe_allocate_zero_vec(ell.pow2());

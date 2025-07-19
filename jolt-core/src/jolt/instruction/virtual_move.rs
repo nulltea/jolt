@@ -78,7 +78,7 @@ impl<const WORD_SIZE: usize> JoltInstruction for MOVEInstruction<WORD_SIZE> {
         debug_assert_eq!(r.len(), 2 * WORD_SIZE);
         let mut result = F::zero();
         for i in 0..WORD_SIZE {
-            result += F::from_u64(1 << (WORD_SIZE - 1 - i)) * r[WORD_SIZE + i];
+            result += F::from_u64_unchecked(1 << (WORD_SIZE - 1 - i)) * r[WORD_SIZE + i];
         }
         result
     }

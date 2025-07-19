@@ -15,12 +15,13 @@ pub trait FieldOps<Rhs = Self, Output = Self>:
 
 pub trait JoltField:
     'static
+    + ark_ff::PrimeField
     + Sized
     + Zero
     + One
     + Neg<Output = Self>
     + FieldOps<Self, Self>
-    + for<'a> FieldOps<&'a Self, Self>
+    // + for<'a> FieldOps<&'a Self, Self>
     + AddAssign<Self>
     + SubAssign<Self>
     + MulAssign<Self>
@@ -60,12 +61,12 @@ pub trait JoltField:
     fn from_u8(n: u8) -> Self;
     fn from_u16(n: u16) -> Self;
     fn from_u32(n: u32) -> Self;
-    fn from_u64(n: u64) -> Self;
+    fn from_u64_unchecked(n: u64) -> Self;
     fn from_i64(val: i64) -> Self;
     fn from_i128(val: i128) -> Self;
-    fn square(&self) -> Self;
+    // fn square(&self) -> Self;
     fn from_bytes(bytes: &[u8]) -> Self;
-    fn inverse(&self) -> Option<Self>;
+    // fn inverse(&self) -> Option<Self>;
     fn to_u64(&self) -> Option<u64> {
         unimplemented!("conversion to u64 not implemented");
     }
@@ -77,7 +78,7 @@ pub trait JoltField:
     /// The result will be in Montgomery form (if BN254)
     #[inline(always)]
     fn mul_u64(&self, n: u64) -> Self {
-        *self * Self::from_u64(n)
+        *self * Self::from_u64_unchecked(n)
     }
     #[inline(always)]
     fn mul_i128(&self, n: i128) -> Self {

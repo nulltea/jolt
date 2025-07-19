@@ -68,7 +68,7 @@ impl SmallScalar for u64 {
     }
     #[inline]
     fn to_field<F: JoltField>(self) -> F {
-        F::from_u64(self)
+        F::from_u64_unchecked(self)
     }
     #[inline]
     fn abs_diff_u64(self, other: Self) -> u64 {
@@ -154,7 +154,7 @@ impl<T: SmallScalar, F: JoltField> PolynomialBinding<F> for CompactPolynomial<T,
         !self.bound_coeffs.is_empty()
     }
 
-    #[tracing::instrument(skip_all, name = "CompactPolynomial::bind")]
+    #[tracing::instrument(skip_all, name = "CompactPolynomial::bind", level = "trace")]
     fn bind(&mut self, r: F, order: BindingOrder) {
         let n = self.len() / 2;
         if self.is_bound() {
@@ -232,7 +232,7 @@ impl<T: SmallScalar, F: JoltField> PolynomialBinding<F> for CompactPolynomial<T,
         self.len = n;
     }
 
-    #[tracing::instrument(skip_all, name = "CompactPolynomial::bind")]
+    #[tracing::instrument(skip_all, name = "CompactPolynomial::bind", level = "trace")]
     fn bind_parallel(&mut self, r: F, order: BindingOrder) {
         let n = self.len() / 2;
         if self.is_bound() {

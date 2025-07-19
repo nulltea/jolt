@@ -7,6 +7,7 @@ use crate::field::JoltField;
 use crate::utils::math::Math;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use core::ops::Index;
+use std::ops::{Add, AddAssign, Sub, SubAssign};
 use rand_core::{CryptoRng, RngCore};
 use rayon::prelude::*;
 
@@ -63,6 +64,18 @@ impl<F: JoltField> DensePolynomial<F> {
         self.len == 0
     }
 
+    pub fn split(&self, idx: usize) -> (Self, Self) {
+        assert!(idx < self.len());
+        (
+            Self::new(self.Z[..idx].to_vec()),
+            Self::new(self.Z[idx..2 * idx].to_vec()),
+        )
+    }
+
+    pub fn split_evals(&self, idx: usize) -> (&[F], &[F]) {
+        (&self.Z[..idx], &self.Z[idx..])
+    }
+
     pub fn is_bound(&self) -> bool {
         self.len != self.Z.len()
     }
@@ -115,7 +128,7 @@ impl<F: JoltField> DensePolynomial<F> {
 
     /// Bounds the polynomial's most significant index bit to 'r' optimized for a
     /// high P(eval = 0).
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(skip_all, level = "trace")]
     pub fn bound_poly_var_top_zero_optimized(&mut self, r: &F) {
         let n = self.len() / 2;
 
@@ -132,7 +145,7 @@ impl<F: JoltField> DensePolynomial<F> {
         self.len = n;
     }
 
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(skip_all, level = "trace")]
     pub fn new_poly_from_bound_poly_var_top(&self, r: &F) -> Self {
         let n = self.len() / 2;
         let mut new_evals: Vec<F> = unsafe_allocate_zero_vec(n);
@@ -157,7 +170,7 @@ impl<F: JoltField> DensePolynomial<F> {
         }
     }
 
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(skip_all, level = "trace")]
     pub fn new_poly_from_bound_poly_var_top_flags(&self, r: &F) -> Self {
         let n = self.len() / 2;
         let mut new_evals: Vec<F> = unsafe_allocate_zero_vec(n);
@@ -199,7 +212,7 @@ impl<F: JoltField> DensePolynomial<F> {
     }
 
     /// Note: does not truncate
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(skip_all, level = "trace")]
     pub fn bound_poly_var_bot(&mut self, r: &F) {
         let n = self.len() / 2;
         for i in 0..n {
@@ -266,18 +279,18 @@ impl<F: JoltField> DensePolynomial<F> {
         self.Z.as_ref()
     }
 
-    #[tracing::instrument(skip_all, name = "DensePolynomial::from")]
+    #[tracing::instrument(skip_all, name = "DensePolynomial::from", level = "trace")]
     pub fn from_usize(Z: &[usize]) -> Self {
         DensePolynomial::new(
             (0..Z.len())
-                .map(|i| F::from_u64(Z[i] as u64))
+                .map(|i| F::from_u64_unchecked(Z[i] as u64))
                 .collect::<Vec<F>>(),
         )
     }
 
-    #[tracing::instrument(skip_all, name = "DensePolynomial::from")]
+    #[tracing::instrument(skip_all, name = "DensePolynomial::from", level = "trace")]
     pub fn from_u64(Z: &[u64]) -> Self {
-        DensePolynomial::new((0..Z.len()).map(|i| F::from_u64(Z[i])).collect::<Vec<F>>())
+        DensePolynomial::new((0..Z.len()).map(|i| F::from_u64_unchecked(Z[i])).collect::<Vec<F>>())
     }
 
     pub fn random<R: RngCore + CryptoRng>(num_vars: usize, mut rng: &mut R) -> Self {
@@ -301,6 +314,97 @@ impl<F: JoltField> Index<usize> for DensePolynomial<F> {
     #[inline(always)]
     fn index(&self, _index: usize) -> &F {
         &(self.Z[_index])
+    }
+}
+
+impl<F: JoltField> Add for DensePolynomial<F> {
+    type Output = Self;
+
+    fn add(self, rhs: DensePolynomial<F>) -> Self::Output {
+        &self + &rhs
+    }
+}
+
+impl<F: JoltField> Add for &DensePolynomial<F> {
+    type Output = DensePolynomial<F>;
+
+    fn add(self, rhs: &DensePolynomial<F>) -> Self::Output {
+        assert_eq!(self.num_vars, rhs.num_vars);
+        assert_eq!(self.len, rhs.len);
+
+        DensePolynomial {
+            num_vars: self.num_vars,
+            len: self.len,
+            Z: self.Z.iter().zip(&rhs.Z).map(|(a, b)| *a + *b).collect(),
+            binding_scratch_space: None,
+        }
+    }
+}
+
+impl<F: JoltField> Add<&DensePolynomial<F>> for DensePolynomial<F> {
+    type Output = DensePolynomial<F>;
+
+    fn add(self, rhs: &DensePolynomial<F>) -> Self::Output {
+        &self + rhs
+    }
+}
+
+impl<F: JoltField> AddAssign for DensePolynomial<F> {
+    fn add_assign(&mut self, rhs: Self) {
+        assert_eq!(self.num_vars, rhs.num_vars);
+        assert_eq!(self.len, rhs.len);
+
+        *self = Self {
+            num_vars: self.num_vars,
+            len: self.len,
+            Z: self.Z.iter().zip(&rhs.Z).map(|(a, b)| *a + *b).collect(),
+            binding_scratch_space: None,
+        }
+    }
+}
+
+impl<F: JoltField> AddAssign<&DensePolynomial<F>> for DensePolynomial<F> {
+    fn add_assign(&mut self, rhs: &DensePolynomial<F>) {
+        *self = &*self + rhs;
+    }
+}
+
+impl<F: JoltField> Sub for &DensePolynomial<F> {
+    type Output = DensePolynomial<F>;
+
+    fn sub(self, rhs: &DensePolynomial<F>) -> Self::Output {
+        assert_eq!(self.num_vars, rhs.num_vars);
+        assert_eq!(self.len, rhs.len);
+        let summed_evaluations: Vec<F> = self.Z.iter().zip(&rhs.Z).map(|(a, b)| *a - *b).collect();
+
+        DensePolynomial {
+            num_vars: self.num_vars,
+            len: self.len,
+            Z: summed_evaluations,
+            binding_scratch_space: None,
+        }
+    }
+}
+
+impl<F: JoltField> Sub<&DensePolynomial<F>> for DensePolynomial<F> {
+    type Output = DensePolynomial<F>;
+
+    fn sub(self, rhs: &DensePolynomial<F>) -> Self::Output {
+        &self - rhs
+    }
+}
+
+impl<F: JoltField> Sub for DensePolynomial<F> {
+    type Output = Self;
+
+    fn sub(self, rhs: DensePolynomial<F>) -> Self::Output {
+        &self - &rhs
+    }
+}
+
+impl<F: JoltField> SubAssign<&DensePolynomial<F>> for DensePolynomial<F> {
+    fn sub_assign(&mut self, rhs: &DensePolynomial<F>) {
+        *self = &*self - rhs;
     }
 }
 

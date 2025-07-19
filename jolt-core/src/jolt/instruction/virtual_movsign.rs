@@ -119,7 +119,7 @@ impl<const WORD_SIZE: usize> JoltInstruction for MOVSIGNInstruction<WORD_SIZE> {
 
         let sign_bit = r[0];
         let ones: u64 = (1 << WORD_SIZE) - 1;
-        sign_bit * F::from_u64(ones)
+        sign_bit * F::from_u64_unchecked(ones)
     }
 }
 
@@ -134,7 +134,7 @@ impl<const WORD_SIZE: usize> PrefixSuffixDecomposition<WORD_SIZE>
         debug_assert_eq!(self.suffixes().len(), suffixes.len());
         let [one] = suffixes.try_into().unwrap();
         let ones: u64 = (1 << WORD_SIZE) - 1;
-        F::from_u64(ones) * prefixes[Prefixes::LeftOperandMsb] * one
+        F::from_u64_unchecked(ones) * prefixes[Prefixes::LeftOperandMsb] * one
     }
 }
 

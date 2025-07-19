@@ -16,6 +16,7 @@ use crate::subprotocols::QuarkHybridLayerDepth;
 use crate::utils::math::Math;
 use crate::utils::thread::drop_in_background_thread;
 use crate::utils::transcript::Transcript;
+use itertools::Itertools;
 use rayon::prelude::*;
 
 /// A special bottom layer of a grand product, where boolean flags are used to
@@ -131,7 +132,11 @@ impl<F: JoltField> BatchedGrandProductToggleLayer<F> {
     ///   o      o     o      o    <-  output layer
     ///  / \    / \   / \    / \
     /// 🏴  o  🏳️ o  🏳️ o  🏴  o  <- toggle layer
-    #[tracing::instrument(skip_all, name = "BatchedGrandProductToggleLayer::layer_output")]
+    #[tracing::instrument(
+        skip_all,
+        name = "BatchedGrandProductToggleLayer::layer_output",
+        level = "trace"
+    )]
     fn layer_output(&self) -> SparseInterleavedPolynomial<F> {
         let values: Vec<_> = self
             .fingerprints
@@ -154,7 +159,11 @@ impl<F: JoltField> BatchedGrandProductToggleLayer<F> {
     /// Coalesces flags and fingerprints into one (dense) vector each.
     /// After a certain number of bindings, we can no longer process the k
     /// circuits in the batch in independently, at which point we coalesce.
-    #[tracing::instrument(skip_all, name = "BatchedGrandProductToggleLayer::coalesce")]
+    #[tracing::instrument(
+        skip_all,
+        name = "BatchedGrandProductToggleLayer::coalesce",
+        level = "trace"
+    )]
     fn coalesce(&mut self) {
         let mut coalesced_fingerprints: Vec<F> =
             self.fingerprints.iter().map(|f| f[0]).collect::<Vec<_>>();
@@ -196,7 +205,11 @@ impl<F: JoltField> Bindable<F> for BatchedGrandProductToggleLayer<F> {
     ///   value 1. For our sparse representation of flags, the absence of a node implies
     ///   that it has value 0. In other words, a flag with value 1 will be present in both
     ///   `self.flag_indices` and `self.flag_values`.
-    #[tracing::instrument(skip_all, name = "BatchedGrandProductToggleLayer::bind")]
+    #[tracing::instrument(
+        skip_all,
+        name = "BatchedGrandProductToggleLayer::bind",
+        level = "trace"
+    )]
     fn bind(&mut self, r: F) {
         #[cfg(test)]
         let (mut flags_before_binding, mut fingerprints_before_binding) = self.to_dense();
@@ -396,7 +409,11 @@ impl<F: JoltField, ProofTranscript: Transcript> BatchedCubicSumcheck<F, ProofTra
     /// 2. Flags/fingerprints are coalesced, and E1 isn't fully bound
     /// 3. Flags/fingerprints aren't coalesced, and E1 is fully bound
     /// 4. Flags/fingerprints aren't coalesced, and E1 isn't fully bound
-    #[tracing::instrument(skip_all, name = "BatchedGrandProductToggleLayer::compute_cubic")]
+    #[tracing::instrument(
+        skip_all,
+        name = "BatchedGrandProductToggleLayer::compute_cubic",
+        level = "trace"
+    )]
     fn compute_cubic(&self, eq_poly: &SplitEqPolynomial<F>, previous_round_claim: F) -> UniPoly<F> {
         if let Some(coalesced_flags) = &self.coalesced_flags {
             let coalesced_fingerprints = self.coalesced_fingerprints.as_ref().unwrap();
@@ -991,6 +1008,11 @@ where
 
         for i in 0..num_sparse_layers {
             let previous_layer = &layers[i];
+            if i < 2 {
+                for chunk in previous_layer.coeffs.iter() {
+                    tracing::info!("construct layer {} previous_layer: {:?}", i, &chunk.iter().map(|coeff| coeff.value).collect_vec());
+                }
+            }
             layers.push(previous_layer.layer_output());
         }
 
@@ -1062,7 +1084,11 @@ where
     }
 
     /// Verifies the given grand product proof.
-    #[tracing::instrument(skip_all, name = "ToggledBatchedGrandProduct::verify_grand_product")]
+    #[tracing::instrument(
+        skip_all,
+        name = "ToggledBatchedGrandProduct::verify_grand_product",
+        level = "trace"
+    )]
     fn verify_grand_product(
         proof: &BatchedGrandProductProof<PCS, ProofTranscript>,
         claimed_outputs: &[F],
@@ -1093,7 +1119,11 @@ where
             let expected_sumcheck_claim: F =
                 layer_proof.left_claim * layer_proof.right_claim * eq_eval;
 
-            assert_eq!(expected_sumcheck_claim, sumcheck_claim);
+            assert_eq!(
+                expected_sumcheck_claim, sumcheck_claim,
+                "sumcheck claim mismatch on layer {}",
+                layer_index
+            );
 
             // produce a random challenge to condense two claims into a single claim
             let r_layer = transcript.challenge_scalar();

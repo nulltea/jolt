@@ -156,7 +156,7 @@ where
             let transcript_inverse = proof
                 .scalar_transcript
                 .par_iter()
-                .map(|x| JoltField::inverse(x).unwrap())
+                .map(|x| x.inverse().unwrap())
                 .collect::<Vec<_>>();
 
             // KZG challenge point
@@ -192,7 +192,7 @@ where
             GipaProof::<P, ProofTranscript>::verify(com, &proof.commitment_steps, transcript)?;
         let transcript_inverse = gipa_transcript
             .par_iter()
-            .map(|x| JoltField::inverse(x).unwrap())
+            .map(|x| x.inverse().unwrap())
             .collect::<Vec<_>>();
 
         // KZG challenge point

@@ -163,7 +163,7 @@ pub fn instruction_mle_random_test<F: JoltField, I: JoltInstruction + Default>()
     for _ in 0..1000 {
         let index = rng.next_u64();
         assert_eq!(
-            F::from_u64(I::default().materialize_entry(index)),
+            F::from_u64_unchecked(I::default().materialize_entry(index)),
             I::default().evaluate_mle(&index_to_field_bitvector(index, 64)),
             "MLE did not match materialized table at index {index}",
         );
@@ -174,7 +174,7 @@ pub fn instruction_mle_full_hypercube_test<F: JoltField, I: JoltInstruction + De
     let materialized = I::default().materialize();
     for (i, entry) in materialized.iter().enumerate() {
         assert_eq!(
-            F::from_u64(*entry),
+            F::from_u64_unchecked(*entry),
             I::default().evaluate_mle(&index_to_field_bitvector(i as u64, 16)),
             "MLE did not match materialized table at index {i}",
         );
@@ -200,7 +200,7 @@ pub fn prefix_suffix_test<F: JoltField, I: PrefixSuffixDecomposition<32>>() {
         let instr = I::default().random(&mut rng);
         let lookup_index = instr.to_lookup_index();
 
-        let result = F::from_u64(instr.materialize_entry(lookup_index));
+        let result = F::from_u64_unchecked(instr.materialize_entry(lookup_index));
 
         let mut j = 0;
         let mut r: Vec<u8> = vec![];

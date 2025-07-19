@@ -30,10 +30,10 @@ pub struct GruenSplitEqPolynomial<F> {
 /// TODO: remove all usage of this struct with the new one
 pub struct SplitEqPolynomial<F> {
     num_vars: usize,
-    pub(crate) E1: Vec<F>,
-    pub(crate) E1_len: usize,
-    pub(crate) E2: Vec<F>,
-    pub(crate) E2_len: usize,
+    pub E1: Vec<F>,
+    pub E1_len: usize,
+    pub E2: Vec<F>,
+    pub E2_len: usize,
 }
 
 impl<F: JoltField> GruenSplitEqPolynomial<F> {
@@ -167,7 +167,7 @@ impl<F: JoltField> GruenSplitEqPolynomial<F> {
         self.E_out_vec.last().unwrap()
     }
 
-    #[tracing::instrument(skip_all, name = "GruenSplitEqPolynomial::bind")]
+    #[tracing::instrument(skip_all, name = "GruenSplitEqPolynomial::bind", level = "trace")]
     pub fn bind(&mut self, r: F) {
         // multiply `current_scalar` by `eq(w[i], r) = (1 - w[i]) * (1 - r) + w[i] * r`
         // which is the same as `1 - w[i] - r + 2 * w[i] * r`
@@ -225,7 +225,7 @@ impl<F: JoltField> GruenSplitEqPolynomial<F> {
 }
 
 impl<F: JoltField> SplitEqPolynomial<F> {
-    #[tracing::instrument(skip_all, name = "SplitEqPolynomial::new")]
+    #[tracing::instrument(skip_all, name = "SplitEqPolynomial::new", level = "trace")]
     pub fn new(w: &[F]) -> Self {
         let m = w.len() / 2;
         let (w2, w1) = w.split_at(m);
@@ -253,7 +253,7 @@ impl<F: JoltField> SplitEqPolynomial<F> {
         }
     }
 
-    #[tracing::instrument(skip_all, name = "SplitEqPolynomial::bind")]
+    #[tracing::instrument(skip_all, name = "SplitEqPolynomial::bind", level = "trace")]
     pub fn bind(&mut self, r: F) {
         if self.E1_len == 1 {
             // E_1 is already completely bound, so we bind E_2

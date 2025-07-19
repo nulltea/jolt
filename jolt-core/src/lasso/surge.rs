@@ -170,7 +170,7 @@ where
                     .map(|i| {
                         // 0 * gamma^2 +
                         preprocessing.materialized_subtables[subtable_index][i].field_mul(*gamma)
-                            + F::from_u64(i as u64)
+                            + F::from_u64_unchecked(i as u64)
                             - *tau
                     })
                     .collect();

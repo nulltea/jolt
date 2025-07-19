@@ -73,7 +73,7 @@ impl<const WORD_SIZE: usize> JoltInstruction for RightShiftPaddingInstruction<WO
         let mut result = F::zero();
         for shift in 0..WORD_SIZE {
             let padding = ((1 << shift) - 1) << (WORD_SIZE - shift);
-            result += F::from_u64(padding)
+            result += F::from_u64_unchecked(padding)
                 * eq.evaluate(&index_to_field_bitvector(shift as u64, WORD_SIZE.log_2()))
         }
         result
@@ -91,7 +91,7 @@ impl<const WORD_SIZE: usize> PrefixSuffixDecomposition<WORD_SIZE>
         debug_assert_eq!(self.suffixes().len(), suffixes.len());
         let [one, right_shift_padding] = suffixes.try_into().unwrap();
         // 2^WORD_SIZE - 2^shift = 0b11...100..0
-        F::from_u64(1 << WORD_SIZE) * one
+        F::from_u64_unchecked(1 << WORD_SIZE) * one
             - prefixes[Prefixes::RightShiftPadding] * right_shift_padding
     }
 }

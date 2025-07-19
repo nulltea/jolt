@@ -3,6 +3,7 @@
 //! This is the building block of other Product Arguments like Tipa
 use std::marker::PhantomData;
 
+use ark_ff::Field;
 use super::Error;
 use crate::msm::Icicle;
 use crate::{
@@ -136,7 +137,7 @@ where
                     transcript.append_serializable(&com_r.0);
                     transcript.append_point(&com_r.1);
                     let c: P::ScalarField = transcript.challenge_scalar();
-                    let c_inv = JoltField::inverse(&c).unwrap();
+                    let c_inv = c.inverse().unwrap();
 
                     // Set up values for next step of recursion
                     let rescale_ml = tracing::span!(Level::TRACE, "Rescale ML");
@@ -207,7 +208,7 @@ where
             transcript.append_point(&com_r.1);
 
             let c: P::ScalarField = transcript.challenge_scalar();
-            let c_inv = JoltField::inverse(&c).unwrap();
+            let c_inv = c.inverse().unwrap();
 
             com_a = com_l.0 * c + com_a + com_r.0 * c_inv;
             com_t = com_l.1 * c + com_t + com_r.1 * c_inv;

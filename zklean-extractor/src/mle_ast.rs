@@ -144,7 +144,7 @@ impl<const NUM_NODES: usize> crate::util::ZkLeanReprField for MleAst<NUM_NODES> 
     fn evaluate<F: JoltField>(&self, vars: &[F]) -> F {
         fn helper<F: JoltField>(vars: &[F], nodes: &[Option<MleAstNode>], root: usize) -> F {
             match nodes[root] {
-                Some(MleAstNode::Scalar(f)) => F::from_u64(f as u64), // TODO: handle negative scalars?
+                Some(MleAstNode::Scalar(f)) => F::from_u64_unchecked(f as u64), // TODO: handle negative scalars?
                 Some(MleAstNode::Var(_, var)) => vars[var], // TODO: handle multiple registers?
                 Some(MleAstNode::Neg(next_root)) => -helper(vars, nodes, root - next_root),
                 Some(MleAstNode::Inv(next_root)) => helper(vars, nodes, root - next_root)
@@ -404,7 +404,7 @@ impl<const NUM_NODES: usize> JoltField for MleAst<NUM_NODES> {
         Self::new_with_root(MleAstNode::Scalar(n as i128))
     }
 
-    fn from_u64(n: u64) -> Self {
+    fn from_u64_unchecked(n: u64) -> Self {
         Self::new_with_root(MleAstNode::Scalar(n as i128))
     }
 

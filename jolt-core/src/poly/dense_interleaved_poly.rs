@@ -113,7 +113,7 @@ impl<F: JoltField> Bindable<F> for DenseInterleavedPolynomial<F> {
     ///   |  |\  \   |  |\  \
     ///   0  1 2  3  4  5 6  7
     /// Left nodes have even indices, right nodes have odd indices.
-    #[tracing::instrument(skip_all, name = "DenseInterleavedPolynomial::bind")]
+    #[tracing::instrument(skip_all, name = "DenseInterleavedPolynomial::bind", level = "trace")]
     fn bind(&mut self, r: F) {
         #[cfg(test)]
         let (mut left_before_binding, mut right_before_binding) = self.uninterleave();
@@ -208,7 +208,7 @@ impl<F: JoltField, ProofTranscript: Transcript> BatchedCubicSumcheck<F, ProofTra
     ///                           |  |  |  |
     ///    left(0, 0, 0, ..., x_b=0) |  |  right(0, 0, 0, ..., x_b=1)
     ///     right(0, 0, 0, ..., x_b=0)  left(0, 0, 0, ..., x_b=1)
-    #[tracing::instrument(skip_all, name = "DenseInterleavedPolynomial::compute_cubic")]
+    #[tracing::instrument(skip_all, name = "DenseInterleavedPolynomial::compute_cubic", level = "trace")]
     fn compute_cubic(&self, eq_poly: &SplitEqPolynomial<F>, previous_round_claim: F) -> UniPoly<F> {
         // We use the Dao-Thaler optimization for the EQ polynomial, so there are two cases we
         // must handle. For details, refer to Section 2.2 of https://eprint.iacr.org/2024/1210.pdf

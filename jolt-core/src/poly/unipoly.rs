@@ -41,7 +41,7 @@ impl<F: JoltField> UniPoly<F> {
 
     fn vandermonde_interpolation(evals: &[F]) -> Vec<F> {
         let n = evals.len();
-        let xs: Vec<F> = (0..n).map(|x| F::from_u64(x as u64)).collect();
+        let xs: Vec<F> = (0..n).map(|x| F::from_u64_unchecked(x as u64)).collect();
 
         let mut vandermonde: Vec<Vec<F>> = Vec::with_capacity(n);
         for i in 0..n {
@@ -52,7 +52,7 @@ impl<F: JoltField> UniPoly<F> {
             for j in 2..n {
                 row.push(row[j - 1] * x);
             }
-            row.push(evals[i]);
+            row.push(evals[i]); 
             vandermonde.push(row);
         }
 
@@ -61,7 +61,7 @@ impl<F: JoltField> UniPoly<F> {
 
     /// Divide self by another polynomial, and returns the
     /// quotient and remainder.
-    #[tracing::instrument(skip_all, name = "UniPoly::divide_with_remainder")]
+    #[tracing::instrument(skip_all, name = "UniPoly::divide_with_remainder", level = "trace")]
     pub fn divide_with_remainder(&self, divisor: &Self) -> Option<(Self, Self)> {
         if self.is_zero() {
             Some((Self::zero(), Self::zero()))
@@ -120,12 +120,12 @@ impl<F: JoltField> UniPoly<F> {
         (0..self.coeffs.len()).map(|i| self.coeffs[i]).sum()
     }
 
-    #[tracing::instrument(skip_all, name = "UniPoly::evaluate")]
+    #[tracing::instrument(skip_all, name = "UniPoly::evaluate", level = "trace")]
     pub fn evaluate(&self, r: &F) -> F {
         Self::eval_with_coeffs(&self.coeffs, r)
     }
 
-    #[tracing::instrument(skip_all, name = "UniPoly::eval_with_coeffs")]
+    #[tracing::instrument(skip_all, name = "UniPoly::eval_with_coeffs", level = "trace")]
     pub fn eval_with_coeffs(coeffs: &[F], r: &F) -> F {
         let mut eval = coeffs[0];
         let mut power = *r;
@@ -136,7 +136,7 @@ impl<F: JoltField> UniPoly<F> {
         eval
     }
 
-    #[tracing::instrument(skip_all, name = "UniPoly::eval_as_univariate")]
+    #[tracing::instrument(skip_all, name = "UniPoly::eval_as_univariate", level = "trace")]
     pub fn eval_as_univariate(poly: &MultilinearPolynomial<F>, r: &F) -> F {
         match poly {
             MultilinearPolynomial::LargeScalars(poly) => {
@@ -322,6 +322,12 @@ impl<F: JoltField> MulAssign<&F> for UniPoly<F> {
 }
 
 impl<F: JoltField> CompressedUniPoly<F> {
+    pub fn from_vec(coeffs_except_linear_term: Vec<F>) -> Self {
+        Self {
+            coeffs_except_linear_term,
+        }
+    }
+
     // we require eval(0) + eval(1) = hint, so we can solve for the linear term as:
     // linear_term = hint - 2 * constant_term - deg2 term - deg3 term
     pub fn decompress(&self, hint: &F) -> UniPoly<F> {
@@ -360,6 +366,16 @@ impl<F: JoltField> CompressedUniPoly<F> {
     }
 }
 
+impl<F: JoltField> AppendToTranscript for UniPoly<F> {
+    fn append_to_transcript<ProofTranscript: Transcript>(&self, transcript: &mut ProofTranscript) {
+        transcript.append_message(b"UniPoly_begin");
+        for i in 0..self.coeffs.len() {
+            transcript.append_scalar(&self.coeffs[i]);
+        }
+        transcript.append_message(b"UniPoly_end");
+    }
+}
+
 impl<F: JoltField> AppendToTranscript for CompressedUniPoly<F> {
     fn append_to_transcript<ProofTranscript: Transcript>(&self, transcript: &mut ProofTranscript) {
         transcript.append_message(b"UniPoly_begin");
@@ -385,8 +401,8 @@ mod tests {
     fn test_from_evals_quad_helper<F: JoltField>() {
         // polynomial is 2x^2 + 3x + 1
         let e0 = F::one();
-        let e1 = F::from_u64(6u64);
-        let e2 = F::from_u64(15u64);
+        let e1 = F::from_u64_unchecked(6u64);
+        let e2 = F::from_u64_unchecked(15u64);
         let evals = vec![e0, e1, e2];
         let poly = UniPoly::from_evals(&evals);
 
@@ -394,8 +410,8 @@ mod tests {
         assert_eq!(poly.eval_at_one(), e1);
         assert_eq!(poly.coeffs.len(), 3);
         assert_eq!(poly.coeffs[0], F::one());
-        assert_eq!(poly.coeffs[1], F::from_u64(3u64));
-        assert_eq!(poly.coeffs[2], F::from_u64(2u64));
+        assert_eq!(poly.coeffs[1], F::from_u64_unchecked(3u64));
+        assert_eq!(poly.coeffs[2], F::from_u64_unchecked(2u64));
 
         let hint = e0 + e1;
         let compressed_poly = poly.compress();
@@ -404,8 +420,8 @@ mod tests {
             assert_eq!(decompressed_poly.coeffs[i], poly.coeffs[i]);
         }
 
-        let e3 = F::from_u64(28u64);
-        assert_eq!(poly.evaluate(&F::from_u64(3u64)), e3);
+        let e3 = F::from_u64_unchecked(28u64);
+        assert_eq!(poly.evaluate(&F::from_u64_unchecked(3u64)), e3);
     }
 
     #[test]
@@ -415,9 +431,9 @@ mod tests {
     fn test_from_evals_cubic_helper<F: JoltField>() {
         // polynomial is x^3 + 2x^2 + 3x + 1
         let e0 = F::one();
-        let e1 = F::from_u64(7u64);
-        let e2 = F::from_u64(23u64);
-        let e3 = F::from_u64(55u64);
+        let e1 = F::from_u64_unchecked(7u64);
+        let e2 = F::from_u64_unchecked(23u64);
+        let e3 = F::from_u64_unchecked(55u64);
         let evals = vec![e0, e1, e2, e3];
         let poly = UniPoly::from_evals(&evals);
 
@@ -425,8 +441,8 @@ mod tests {
         assert_eq!(poly.eval_at_one(), e1);
         assert_eq!(poly.coeffs.len(), 4);
         assert_eq!(poly.coeffs[0], F::one());
-        assert_eq!(poly.coeffs[1], F::from_u64(3u64));
-        assert_eq!(poly.coeffs[2], F::from_u64(2u64));
+        assert_eq!(poly.coeffs[1], F::from_u64_unchecked(3u64));
+        assert_eq!(poly.coeffs[2], F::from_u64_unchecked(2u64));
         assert_eq!(poly.coeffs[3], F::one());
 
         let hint = e0 + e1;
@@ -436,8 +452,8 @@ mod tests {
             assert_eq!(decompressed_poly.coeffs[i], poly.coeffs[i]);
         }
 
-        let e4 = F::from_u64(109u64);
-        assert_eq!(poly.evaluate(&F::from_u64(4u64)), e4);
+        let e4 = F::from_u64_unchecked(109u64);
+        assert_eq!(poly.evaluate(&F::from_u64_unchecked(4u64)), e4);
     }
 
     pub fn naive_mul<F: JoltField>(ours: &UniPoly<F>, other: &UniPoly<F>) -> UniPoly<F> {
@@ -478,16 +494,16 @@ mod tests {
     fn test_from_linear_times_quadratic_with_hint() {
         // polynomial is s(x) = (x + 1) * (x^2 + 2x + 3) = x^3 + 3x^2 + 5x + 3
         // hint = s(0) + s(1) = 3 + (1 + 3 + 5 + 3) = 15
-        let linear_coeffs = [Fr::from_u64(1u64), Fr::from_u64(1u64)];
-        let quadratic_coeff_0 = Fr::from_u64(3u64);
-        let quadratic_coeff_2 = Fr::from_u64(1u64);
+        let linear_coeffs = [Fr::from_u64_unchecked(1u64), Fr::from_u64_unchecked(1u64)];
+        let quadratic_coeff_0 = Fr::from_u64_unchecked(3u64);
+        let quadratic_coeff_2 = Fr::from_u64_unchecked(1u64);
         let true_poly = UniPoly::from_coeff(vec![
-            Fr::from_u64(3u64),
-            Fr::from_u64(5u64),
-            Fr::from_u64(3u64),
-            Fr::from_u64(1u64),
+            Fr::from_u64_unchecked(3u64),
+            Fr::from_u64_unchecked(5u64),
+            Fr::from_u64_unchecked(3u64),
+            Fr::from_u64_unchecked(1u64),
         ]);
-        let hint = Fr::from_u64(15u64);
+        let hint = Fr::from_u64_unchecked(15u64);
         let poly = UniPoly::from_linear_times_quadratic_with_hint(
             linear_coeffs,
             quadratic_coeff_0,

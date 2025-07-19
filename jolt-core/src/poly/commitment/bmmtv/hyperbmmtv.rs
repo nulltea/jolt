@@ -23,6 +23,7 @@ use crate::{
         transcript::{AppendToTranscript, Transcript},
     },
 };
+use ark_ff::Field;
 use ark_ec::pairing::{Pairing, PairingOutput};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_std::{One, Zero};

@@ -18,7 +18,7 @@ pub fn allocate_vec_in_background<T: Clone + Send + 'static>(
     thread::spawn(move || vec![value; size])
 }
 
-#[tracing::instrument(skip_all)]
+#[tracing::instrument(skip_all, level = "trace")]
 pub fn unsafe_allocate_zero_vec<F: JoltField + Sized>(size: usize) -> Vec<F> {
     // https://stackoverflow.com/questions/59314686/how-to-efficiently-create-a-large-vector-of-items-initialized-to-the-same-value
 

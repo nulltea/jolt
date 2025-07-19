@@ -186,8 +186,29 @@ impl<F: JoltField> MultilinearPolynomial<F> {
             MultilinearPolynomial::U8Scalars(poly) => F::from_u8(poly.coeffs[index]),
             MultilinearPolynomial::U16Scalars(poly) => F::from_u16(poly.coeffs[index]),
             MultilinearPolynomial::U32Scalars(poly) => F::from_u32(poly.coeffs[index]),
-            MultilinearPolynomial::U64Scalars(poly) => F::from_u64(poly.coeffs[index]),
+            MultilinearPolynomial::U64Scalars(poly) => F::from_u64_unchecked(poly.coeffs[index]),
             MultilinearPolynomial::I64Scalars(poly) => F::from_i64(poly.coeffs[index]),
+        }
+    }
+
+    pub fn coeffs_as_field_elements(&self) -> Vec<F> {
+        match self {
+            MultilinearPolynomial::LargeScalars(dense_polynomial) => dense_polynomial.evals_ref().to_vec(),
+            MultilinearPolynomial::U8Scalars(compact_polynomial) => {
+                compact_polynomial.coeffs_as_field_elements()
+            }
+            MultilinearPolynomial::U16Scalars(compact_polynomial) => {
+                compact_polynomial.coeffs_as_field_elements()
+            }
+            MultilinearPolynomial::U32Scalars(compact_polynomial) => {
+                compact_polynomial.coeffs_as_field_elements()
+            }
+            MultilinearPolynomial::U64Scalars(compact_polynomial) => {
+                compact_polynomial.coeffs_as_field_elements()
+            }
+            MultilinearPolynomial::I64Scalars(compact_polynomial) => {
+                compact_polynomial.coeffs_as_field_elements()
+            }
         }
     }
 
@@ -252,7 +273,7 @@ impl<F: JoltField> MultilinearPolynomial<F> {
                 if poly.is_bound() {
                     poly.bound_coeffs[index]
                 } else {
-                    F::from_u64(poly.coeffs[index])
+                    F::from_u64_unchecked(poly.coeffs[index])
                 }
             }
             MultilinearPolynomial::I64Scalars(poly) => {
@@ -577,7 +598,7 @@ impl<F: JoltField> PolynomialBinding<F> for MultilinearPolynomial<F> {
         }
     }
 
-    #[tracing::instrument(skip_all, name = "MultilinearPolynomial::bind")]
+    #[tracing::instrument(skip_all, name = "MultilinearPolynomial::bind", level = "trace")]
     fn bind(&mut self, r: F, order: BindingOrder) {
         match self {
             MultilinearPolynomial::LargeScalars(poly) => poly.bind(r, order),

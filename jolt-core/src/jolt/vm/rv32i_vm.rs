@@ -309,6 +309,8 @@ mod tests {
         let (io_device, trace) = program.trace(&inputs);
         drop(artifact_guard);
 
+        println!("bytecode: {:?}", trace.len());
+
         let preprocessing = RV32IJoltVM::prover_preprocess(
             bytecode.clone(),
             io_device.memory_layout.clone(),
@@ -317,6 +319,7 @@ mod tests {
             1 << 20,
             1 << 20,
         );
+        println!("preprocessing: {:?}", preprocessing.shared.instruction_lookups.num_memories);
         let (proof, commitments, verifier_io_device, debug_info) =
             <RV32IJoltVM as Jolt<F, PCS, C, M, ProofTranscript>>::prove(
                 io_device,

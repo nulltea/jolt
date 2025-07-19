@@ -60,7 +60,7 @@ impl JoltField for ark_bn254::Fr {
     }
 
     #[inline]
-    fn from_u64(n: u64) -> Self {
+    fn from_u64_unchecked(n: u64) -> Self {
         // The new `from_u64` is faster than doing 4 lookups & adding them together
         // but it's slower than doing <=2 lookups & adding them together (if n fits in u16 or u32)
         if n <= u16::MAX as u64 {
@@ -80,7 +80,7 @@ impl JoltField for ark_bn254::Fr {
             } else if val <= u32::MAX as u64 {
                 -<Self as JoltField>::from_u32(val as u32)
             } else {
-                -<Self as JoltField>::from_u64(val)
+                -<Self as JoltField>::from_u64_unchecked(val)
             }
         } else {
             let val = val as u64;
@@ -89,7 +89,7 @@ impl JoltField for ark_bn254::Fr {
             } else if val <= u32::MAX as u64 {
                 <Self as JoltField>::from_u32(val as u32)
             } else {
-                <Self as JoltField>::from_u64(val)
+                <Self as JoltField>::from_u64_unchecked(val)
             }
         }
     }
@@ -102,7 +102,7 @@ impl JoltField for ark_bn254::Fr {
             } else if val <= u32::MAX as u128 {
                 -<Self as JoltField>::from_u32(val as u32)
             } else if val <= u64::MAX as u128 {
-                -<Self as JoltField>::from_u64(val as u64)
+                -<Self as JoltField>::from_u64_unchecked(val as u64)
             } else {
                 let bigint = BigInt::new([val as u64, (val >> 64) as u64, 0, 0]);
                 -<Self as ark_ff::PrimeField>::from_bigint(bigint).unwrap()
@@ -114,7 +114,7 @@ impl JoltField for ark_bn254::Fr {
             } else if val <= u32::MAX as u128 {
                 <Self as JoltField>::from_u32(val as u32)
             } else if val <= u64::MAX as u128 {
-                <Self as JoltField>::from_u64(val as u64)
+                <Self as JoltField>::from_u64_unchecked(val as u64)
             } else {
                 let bigint = BigInt::new([val as u64, (val >> 64) as u64, 0, 0]);
                 <Self as ark_ff::PrimeField>::from_bigint(bigint).unwrap()
@@ -127,20 +127,20 @@ impl JoltField for ark_bn254::Fr {
         let limbs: &[u64] = bigint.as_ref();
         let result = limbs[0];
 
-        if <Self as JoltField>::from_u64(result) != *self {
+        if <Self as JoltField>::from_u64_unchecked(result) != *self {
             None
         } else {
             Some(result)
         }
     }
 
-    fn square(&self) -> Self {
-        <Self as ark_ff::Field>::square(self)
-    }
+    // fn square(&self) -> Self {
+    //     <Self as ark_ff::Field>::square(self)
+    // }
 
-    fn inverse(&self) -> Option<Self> {
-        <Self as ark_ff::Field>::inverse(self)
-    }
+    // fn inverse(&self) -> Option<Self> {
+    //     <Self as ark_ff::Field>::inverse(self)
+    // }
 
     fn from_bytes(bytes: &[u8]) -> Self {
         assert_eq!(bytes.len(), Self::NUM_BYTES);
@@ -174,13 +174,13 @@ mod tests {
         let mut rng = test_rng();
         for _ in 0..256 {
             let x = rng.next_u64();
-            assert_eq!(<Fr as JoltField>::from_u64(x), Fr::one().mul_u64(x));
+            assert_eq!(<Fr as JoltField>::from_u64_unchecked(x), Fr::one().mul_u64(x));
         }
 
         for _ in 0..256 {
             let x = rng.next_u64();
             let y = Fr::random(&mut rng);
-            assert_eq!(y * <Fr as JoltField>::from_u64(x), y.mul_u64(x));
+            assert_eq!(y * <Fr as JoltField>::from_u64_unchecked(x), y.mul_u64(x));
         }
     }
 }

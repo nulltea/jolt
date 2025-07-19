@@ -35,7 +35,11 @@ where
     #[cfg(test)]
     fn sumcheck_sanity_check(&self, eq_poly: &SplitEqPolynomial<F>, round_claim: F);
 
-    #[tracing::instrument(skip_all, name = "BatchedCubicSumcheck::prove_sumcheck")]
+    #[tracing::instrument(
+        skip_all,
+        name = "BatchedCubicSumcheck::prove_sumcheck",
+        level = "trace"
+    )]
     fn prove_sumcheck(
         &mut self,
         claim: &F,
@@ -48,12 +52,20 @@ where
         let mut r: Vec<F> = Vec::new();
         let mut cubic_polys: Vec<CompressedUniPoly<F>> = Vec::new();
 
-        for _ in 0..num_rounds {
+        for _round in 0..num_rounds {
             #[cfg(test)]
             self.sumcheck_sanity_check(eq_poly, previous_claim);
 
             let cubic_poly = self.compute_cubic(eq_poly, previous_claim);
             let compressed_poly = cubic_poly.compress();
+            if _round < 3 {
+                tracing::info!(
+                    "round {} compressed_round_poly: {:?}",
+                    _round,
+                    compressed_poly
+                );
+            }
+
             // append the prover's message to the transcript
             compressed_poly.append_to_transcript(transcript);
             // derive the verifier's challenge for the next round
@@ -94,7 +106,7 @@ impl<F: JoltField, ProofTranscript: Transcript> SumcheckInstanceProof<F, ProofTr
     /// Returns (SumcheckInstanceProof, r_eval_point, final_evals)
     /// - `r_eval_point`: Final random point of evaluation
     /// - `final_evals`: Each of the polys evaluated at `r_eval_point`
-    #[tracing::instrument(skip_all, name = "Sumcheck.prove")]
+    #[tracing::instrument(skip_all, name = "Sumcheck.prove", level = "trace")]
     pub fn prove_arbitrary<Func>(
         claim: &F,
         num_rounds: usize,

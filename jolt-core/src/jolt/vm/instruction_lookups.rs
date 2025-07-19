@@ -40,26 +40,26 @@ use super::{JoltCommitments, JoltPolynomials, JoltTraceStep};
 pub struct InstructionLookupStuff<T: CanonicalSerialize + CanonicalDeserialize> {
     /// `C`-sized vector of polynomials/commitments/openings corresponding to the
     /// indices at which subtables are queried.
-    pub(crate) dim: Vec<T>,
+    pub dim: Vec<T>,
     /// `num_memories`-sized vector of polynomials/commitments/openings corresponding to
     /// the read access counts for each memory.
-    read_cts: Vec<T>,
+    pub read_cts: Vec<T>,
     /// `num_memories`-sized vector of polynomials/commitments/openings corresponding to
     /// the final access counts for each memory.
-    pub(crate) final_cts: Vec<T>,
+    pub final_cts: Vec<T>,
     /// `num_memories`-sized vector of polynomials/commitments/openings corresponding to
     /// the values read from each memory.
-    pub(crate) E_polys: Vec<T>,
+    pub E_polys: Vec<T>,
     /// `NUM_INSTRUCTIONS`-sized vector of polynomials/commitments/openings corresponding
     /// to the indicator bitvectors designating which lookup to perform at each step of
     /// the execution trace.
-    pub(crate) instruction_flags: Vec<T>,
+    pub instruction_flags: Vec<T>,
     /// The polynomial/commitment/opening corresponding to the lookup output for each
     /// step of the execution trace.
-    pub(crate) lookup_outputs: T,
+    pub lookup_outputs: T,
 
-    a_init_final: VerifierComputedOpening<T>,
-    v_init_final: VerifierComputedOpening<Vec<T>>,
+    pub a_init_final: VerifierComputedOpening<T>,
+    pub v_init_final: VerifierComputedOpening<Vec<T>>,
 }
 
 /// Note –– F: JoltField bound is not enforced.
@@ -604,13 +604,13 @@ pub struct PrimarySumcheck<F: JoltField, ProofTranscript: Transcript> {
 
 #[derive(Clone, CanonicalSerialize, CanonicalDeserialize)]
 pub struct InstructionLookupsPreprocessing<const C: usize, F: JoltField> {
-    subtable_to_memory_indices: Vec<Vec<usize>>, // Vec<Range<usize>>?
-    instruction_to_memory_indices: Vec<Vec<usize>>,
-    memory_to_subtable_index: Vec<usize>,
-    memory_to_dimension_index: Vec<usize>,
-    materialized_subtables: Vec<Vec<u32>>,
-    num_memories: usize,
-    _field: PhantomData<F>,
+    pub subtable_to_memory_indices: Vec<Vec<usize>>, // Vec<Range<usize>>?
+    pub instruction_to_memory_indices: Vec<Vec<usize>>,
+    pub memory_to_subtable_index: Vec<usize>,
+    pub memory_to_dimension_index: Vec<usize>,
+    pub materialized_subtables: Vec<Vec<u32>>,
+    pub num_memories: usize,
+    pub _field: PhantomData<F>,
 }
 
 impl<const C: usize, F: JoltField> InstructionLookupsPreprocessing<C, F> {
@@ -1263,6 +1263,38 @@ where
 
     fn protocol_name() -> &'static [u8] {
         b"Jolt instruction lookups"
+    }
+}
+
+impl<F: JoltField> InstructionLookupPolynomials<F> {
+    #[tracing::instrument(skip_all, name = "JoltPolynomials::commit")]
+    pub fn commit<const C: usize, PCS, ProofTranscript>(
+        &self,
+        preprocessing: &InstructionLookupsPreprocessing<C, F>,
+        generators: &PCS::Setup,
+    ) -> InstructionLookupCommitments<PCS, ProofTranscript>
+    where
+        PCS: CommitmentScheme<ProofTranscript, Field = F>,
+        ProofTranscript: Transcript,
+    {
+        let mut commitments = InstructionLookupCommitments::<PCS, ProofTranscript>::initialize(preprocessing);
+
+        let trace_polys = self.read_write_values();
+        let trace_commitments = PCS::batch_commit(&trace_polys, generators);
+
+        commitments
+            .read_write_values_mut()
+            .into_iter()
+            .zip(trace_commitments.into_iter())
+            .for_each(|(dest, src)| *dest = src);
+
+  
+        commitments.final_cts = PCS::batch_commit(
+            &self.final_cts,
+            generators,
+        );
+
+        commitments
     }
 }
 

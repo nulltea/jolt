@@ -1277,6 +1277,7 @@ name = "fibonacci"
 version = "0.1.0"
 dependencies = [
  "fibonacci-guest",
+ "hex",
  "jolt-sdk",
 ]
 

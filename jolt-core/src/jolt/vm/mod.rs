@@ -202,11 +202,11 @@ pub struct JoltProof<
 
 #[derive(Default, CanonicalSerialize, CanonicalDeserialize)]
 pub struct JoltStuff<T: CanonicalSerialize + CanonicalDeserialize + Sync> {
-    pub(crate) bytecode: BytecodeStuff<T>,
-    pub(crate) read_write_memory: ReadWriteMemoryStuff<T>,
-    pub(crate) instruction_lookups: InstructionLookupStuff<T>,
-    pub(crate) timestamp_range_check: TimestampRangeCheckStuff<T>,
-    pub(crate) r1cs: R1CSStuff<T>,
+    pub bytecode: BytecodeStuff<T>,
+    pub read_write_memory: ReadWriteMemoryStuff<T>,
+    pub instruction_lookups: InstructionLookupStuff<T>,
+    pub timestamp_range_check: TimestampRangeCheckStuff<T>,
+    pub r1cs: R1CSStuff<T>,
 }
 
 impl<T: CanonicalSerialize + CanonicalDeserialize + Sync> StructuredPolynomialData<T>
@@ -407,6 +407,7 @@ where
         .into_iter()
         .max()
         .unwrap();
+        println!("max_poly_len: {:?}", max_poly_len);
         let generators = PCS::setup(max_poly_len);
 
         JoltVerifierPreprocessing {

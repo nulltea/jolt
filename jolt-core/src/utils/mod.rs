@@ -106,7 +106,7 @@ pub fn index_to_field_bitvector<F: JoltField>(value: u64, bits: usize) -> Vec<F>
     bitvector
 }
 
-#[tracing::instrument(skip_all)]
+#[tracing::instrument(skip_all, level = "trace")]
 pub fn compute_dotproduct<F: JoltField>(a: &[F], b: &[F]) -> F {
     a.par_iter()
         .zip_eq(b.par_iter())

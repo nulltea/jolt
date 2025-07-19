@@ -23,10 +23,10 @@ impl<const WORD_SIZE: usize, F: JoltField> SparseDensePrefix<F> for Pow2Prefix<W
 
         // Shift amount is the last WORD_SIZE bits of b
         if b.len() >= WORD_SIZE.log_2() {
-            return F::from_u64(1 << (b % WORD_SIZE));
+            return F::from_u64_unchecked(1 << (b % WORD_SIZE));
         }
 
-        let mut result = F::from_u64(1 << (b % WORD_SIZE));
+        let mut result = F::from_u64_unchecked(1 << (b % WORD_SIZE));
         let mut num_bits = b.len();
         let mut shift = 1 << (1 << num_bits);
         result *= F::from_u32(1 + (shift - 1) * c);
@@ -60,16 +60,16 @@ impl<const WORD_SIZE: usize, F: JoltField> SparseDensePrefix<F> for Pow2Prefix<W
         // r_y is the highest bit of the shift amount
         if j == 2 * WORD_SIZE - WORD_SIZE.log_2() {
             let shift = 1 << (WORD_SIZE / 2);
-            return Some(F::one() + F::from_u64(shift - 1) * r_y).into();
+            return Some(F::one() + F::from_u64_unchecked(shift - 1) * r_y).into();
         }
 
         // r_x and r_y are bits in the shift amount
         if 2 * WORD_SIZE - j < WORD_SIZE.log_2() {
             let mut checkpoint = checkpoints[Prefixes::Pow2].unwrap();
             let shift = 1 << (1 << (2 * WORD_SIZE - j));
-            checkpoint *= F::one() + F::from_u64(shift - 1) * r_x;
+            checkpoint *= F::one() + F::from_u64_unchecked(shift - 1) * r_x;
             let shift = 1 << (1 << (2 * WORD_SIZE - j - 1));
-            checkpoint *= F::one() + F::from_u64(shift - 1) * r_y;
+            checkpoint *= F::one() + F::from_u64_unchecked(shift - 1) * r_y;
             return Some(checkpoint).into();
         }
 

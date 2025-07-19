@@ -65,7 +65,7 @@ impl<const WORD_SIZE: usize> JoltInstruction for POW2Instruction<WORD_SIZE> {
         debug_assert_eq!(r.len(), 2 * WORD_SIZE);
         let mut result = F::one();
         for i in 0..WORD_SIZE.log_2() {
-            result *= F::one() + (F::from_u64((1 << (1 << i)) - 1)) * r[r.len() - i - 1];
+            result *= F::one() + (F::from_u64_unchecked((1 << (1 << i)) - 1)) * r[r.len() - i - 1];
         }
         result
     }

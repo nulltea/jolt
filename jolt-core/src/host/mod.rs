@@ -178,6 +178,7 @@ impl Program {
     pub fn trace(&mut self, inputs: &[u8]) -> (JoltDevice, Vec<JoltTraceStep<RV32I>>) {
         self.build(DEFAULT_TARGET_DIR);
         let elf = self.elf.as_ref().unwrap();
+        println!("elf: {:?}", elf);
         let mut elf_file =
             File::open(elf).unwrap_or_else(|_| panic!("could not open elf file: {elf:?}"));
         let mut elf_contents = Vec::new();
@@ -189,7 +190,7 @@ impl Program {
             max_output_size: self.max_output_size,
         };
         let (raw_trace, io_device) = tracer::trace(elf_contents, inputs, &memory_config);
-
+        println!("raw_trace: {:?}", raw_trace.len());
         let trace: Vec<_> = raw_trace
             .into_par_iter()
             .flat_map(|row| match row.instruction.opcode {

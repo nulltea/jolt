@@ -68,7 +68,7 @@ impl<const WORD_SIZE: usize> JoltInstruction for XORInstruction<WORD_SIZE> {
         for i in 0..WORD_SIZE {
             let x_i = r[2 * i];
             let y_i = r[2 * i + 1];
-            result += F::from_u64(1u64 << (WORD_SIZE - 1 - i))
+            result += F::from_u64_unchecked(1u64 << (WORD_SIZE - 1 - i))
                 * ((F::one() - x_i) * y_i + x_i * (F::one() - y_i));
         }
         result
