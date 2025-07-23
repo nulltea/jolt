@@ -34,7 +34,7 @@ use common::rv_trace::{JoltDevice, MemoryLayout, MemoryOp};
 use super::{timestamp_range_check::TimestampValidityProof, JoltCommitments};
 use super::{JoltPolynomials, JoltStuff, JoltTraceStep};
 
-#[derive(Clone, CanonicalSerialize, CanonicalDeserialize)]
+#[derive(Clone, CanonicalSerialize, CanonicalDeserialize, Default)]
 pub struct ReadWriteMemoryPreprocessing {
     min_bytecode_address: u64,
     bytecode_words: Vec<u32>,
@@ -85,11 +85,11 @@ impl ReadWriteMemoryPreprocessing {
     }
 }
 
-fn memory_address_to_witness_index(address: u64, memory_layout: &MemoryLayout) -> usize {
+pub fn memory_address_to_witness_index(address: u64, memory_layout: &MemoryLayout) -> usize {
     (REGISTER_COUNT + (address - memory_layout.input_start) / 4) as usize
 }
 
-fn remap_address(a: u64, memory_layout: &MemoryLayout) -> u64 {
+pub fn remap_address(a: u64, memory_layout: &MemoryLayout) -> u64 {
     if a >= memory_layout.input_start {
         memory_address_to_witness_index(a, memory_layout) as u64
     } else if a < REGISTER_COUNT {
@@ -136,10 +136,10 @@ pub struct ReadWriteMemoryStuff<T: CanonicalSerialize + CanonicalDeserialize> {
     /// Final timestamps.
     pub t_final: T,
 
-    a_init_final: VerifierComputedOpening<T>,
+    pub a_init_final: VerifierComputedOpening<T>,
     /// Initial memory values. RAM is initialized to contain the program bytecode and inputs.
-    v_init: VerifierComputedOpening<T>,
-    identity: VerifierComputedOpening<T>,
+    pub v_init: VerifierComputedOpening<T>,
+    pub identity: VerifierComputedOpening<T>,
 }
 
 impl<T: CanonicalSerialize + CanonicalDeserialize> StructuredPolynomialData<T>
@@ -835,12 +835,12 @@ where
     PCS: CommitmentScheme<ProofTranscript, Field = F>,
     ProofTranscript: Transcript,
 {
-    _pcs: PhantomData<(PCS, ProofTranscript)>,
-    num_rounds: usize,
+    pub _pcs: PhantomData<(PCS, ProofTranscript)>,
+    pub num_rounds: usize,
     /// Sumcheck proof that v_final is equal to the program outputs at the relevant indices.
-    sumcheck_proof: SumcheckInstanceProof<F, ProofTranscript>,
+    pub sumcheck_proof: SumcheckInstanceProof<F, ProofTranscript>,
     /// Opening of v_final at the random point chosen over the course of sumcheck
-    opening: F,
+    pub opening: F,
 }
 
 impl<F, PCS, ProofTranscript> OutputSumcheckProof<F, PCS, ProofTranscript>

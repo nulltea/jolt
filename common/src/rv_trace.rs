@@ -672,7 +672,7 @@ impl Default for MemoryConfig {
     }
 }
 
-#[derive(Clone, PartialEq, Serialize, Deserialize, CanonicalSerialize, CanonicalDeserialize)]
+#[derive(Clone, PartialEq, Serialize, Deserialize, CanonicalSerialize, CanonicalDeserialize, Default)]
 pub struct MemoryLayout {
     pub max_input_size: u64,
     pub max_output_size: u64,

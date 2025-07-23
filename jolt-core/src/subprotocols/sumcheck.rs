@@ -58,13 +58,6 @@ where
 
             let cubic_poly = self.compute_cubic(eq_poly, previous_claim);
             let compressed_poly = cubic_poly.compress();
-            if _round < 3 {
-                tracing::info!(
-                    "round {} compressed_round_poly: {:?}",
-                    _round,
-                    compressed_poly
-                );
-            }
 
             // append the prover's message to the transcript
             compressed_poly.append_to_transcript(transcript);

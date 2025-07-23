@@ -202,7 +202,6 @@ where
         let outputs: Vec<F> = grand_product.claimed_outputs();
         transcript.append_scalars(&outputs);
         let output_mle = DensePolynomial::new_padded(outputs);
-        tracing::info!("output_mle: {:?}", output_mle);
         let r_outputs: Vec<F> = transcript.challenge_vector(output_mle.get_num_vars());
         let claim = output_mle.evaluate(&r_outputs);
 
@@ -220,20 +219,14 @@ where
                     transcript,
                     setup.unwrap(),
                 );
-            panic!("quarks used");
             (Some(quark), random, quark_claim)
         } else {
             (None, r_outputs, claim)
         };
 
-        tracing::info!("initial r: {:?}", random);
-        tracing::info!("initial claim: {:?}", claim);
 
         for layer in grand_product.layers() {
             proof_layers.push(layer.prove_layer(&mut claim, &mut random, transcript));
-            tracing::info!("r: {:?}", random);
-            tracing::info!("claim: {:?}", claim);
-            tracing::info!("--------------------");
         }
 
         (

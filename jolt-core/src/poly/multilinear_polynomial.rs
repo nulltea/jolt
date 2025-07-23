@@ -400,6 +400,17 @@ impl<'a, F: JoltField> TryFrom<&'a MultilinearPolynomial<F>> for &'a DensePolyno
     }
 }
 
+impl<F: JoltField> TryFrom<MultilinearPolynomial<F>> for DensePolynomial<F> {
+    type Error = (); // TODO(moodlezoup)
+
+    fn try_from(poly: MultilinearPolynomial<F>) -> Result<Self, Self::Error> {
+        match poly {
+            MultilinearPolynomial::LargeScalars(poly) => Ok(poly),
+            _ => Err(()),
+        }
+    }
+}
+
 impl<'a, F: JoltField> TryFrom<&'a MultilinearPolynomial<F>> for &'a CompactPolynomial<u8, F> {
     type Error = (); // TODO(moodlezoup)
 

@@ -257,15 +257,11 @@ where
         let init_final_batch_size =
             multiset_hashes.init_hashes.len() + multiset_hashes.final_hashes.len();
 
-        tracing::info!("read_write_batch_size: {}", read_write_batch_size);
-        println!("read_write_batch_size: {}", read_write_batch_size);
-
         // For a batch size of k, the first log2(k) elements of `r_read_write`/`r_init_final`
         // form the point at which the output layer's MLE is evaluated. The remaining elements
         // then form the point at which the leaf layer's polynomials are evaluated.
         let (_, r_read_write_opening) =
             r_read_write.split_at(read_write_batch_size.next_power_of_two().log_2());
-        tracing::info!("r_read_write_opening: {:?}", r_read_write_opening.len());
         let (_, r_init_final_opening) =
             r_init_final.split_at(init_final_batch_size.next_power_of_two().log_2());
 
@@ -307,8 +303,6 @@ where
         // Fiat-Shamir randomness for multiset hashes
         let gamma: F = transcript.challenge_scalar();
         let tau: F = transcript.challenge_scalar();
-
-        tracing::info!("gamma: {:?} tau: {:?}", gamma, tau);
 
         let protocol_name = Self::protocol_name();
         transcript.append_message(protocol_name);
@@ -398,13 +392,13 @@ where
             *opening = *eval;
         }
 
-        opening_accumulator.append(
-            &polynomials.init_final_values(),
-            DensePolynomial::new(eq_init_final),
-            r_init_final.to_vec(),
-            &init_final_evals,
-            transcript,
-        );
+        // opening_accumulator.append(
+        //     &polynomials.init_final_values(),
+        //     DensePolynomial::new(eq_init_final),
+        //     r_init_final.to_vec(),
+        //     &init_final_evals,
+        //     transcript,
+        // );
 
         (openings, exogenous_openings)
     }
@@ -606,6 +600,7 @@ where
             proof.exogenous_openings.openings(),
         ]
         .concat();
+
         opening_accumulator.append(
             &read_write_commits,
             r_read_write_opening.to_vec(),
@@ -613,12 +608,12 @@ where
             transcript,
         );
 
-        opening_accumulator.append(
-            &commitments.init_final_values(),
-            r_init_final_opening.to_vec(),
-            &proof.openings.init_final_values(),
-            transcript,
-        );
+        // opening_accumulator.append(
+        //     &commitments.init_final_values(),
+        //     r_init_final_opening.to_vec(),
+        //     &proof.openings.init_final_values(),
+        //     transcript,
+        // );
 
         Self::compute_verifier_openings(
             &mut proof.openings,

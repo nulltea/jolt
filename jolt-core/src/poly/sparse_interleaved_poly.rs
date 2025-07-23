@@ -471,18 +471,9 @@ impl<F: JoltField, ProofTranscript: Transcript> BatchedCubicSumcheck<F, ProofTra
             );
         }
 
-        // for segment in &self.coeffs {
-        //     let values = segment
-        //         .par_iter()
-        //         .map(|coeff| coeff.value)
-        //         .collect::<Vec<_>>();
-        //     tracing::info!("values: {:?}", (&values[..2], &values[values.len() - 2..]));
-        // }
-
         // We use the Dao-Thaler optimization for the EQ polynomial, so there are two cases we
         // must handle. For details, refer to Section 2.2 of https://eprint.iacr.org/2024/1210.pdf
         let cubic_evals = if eq_poly.E1_len == 1 {
-            tracing::info!("eq_poly.E1_len == 1");
             // If `eq_poly.E1` has been fully bound, we compute the cubic polynomial as we
             // would without the Dao-Thaler optimization, using the standard linear-time
             // sumcheck algorithm with optimizations for sparsity.

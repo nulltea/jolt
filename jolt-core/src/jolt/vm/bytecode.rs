@@ -35,16 +35,16 @@ pub struct BytecodeStuff<T: CanonicalSerialize + CanonicalDeserialize> {
     /// Read/write addresses for offline memory-checking.
     /// For offline memory-checking, each read is paired with a "virtual" write,
     /// so the read addresses and write addresses are the same.
-    pub(crate) a_read_write: T,
+    pub a_read_write: T,
     /// Read/write values for offline memory-checking.
     /// For offline memory-checking, each read is paired with a "virtual" write,
     /// so the read values and write values are the same. There are six values
     /// (address, bitflags, rd, rs1, rs2, imm) associated with each memory address.
-    pub(crate) v_read_write: [T; 6],
+    pub v_read_write: [T; 6],
     /// Read timestamps for offline memory-checking
-    pub(crate) t_read: T,
+    pub t_read: T,
     /// Final timestamps for offline memory-checking
-    pub(crate) t_final: T,
+    pub t_final: T,
     a_init_final: VerifierComputedOpening<T>,
     v_init_final: VerifierComputedOpening<[T; 6]>,
 }
@@ -104,23 +104,23 @@ pub type BytecodeProof<F, PCS, ProofTranscript> =
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct BytecodeRow {
     /// Memory address as read from the ELF.
-    address: usize,
+    pub address: usize,
     /// Packed instruction/circuit flags, used for r1cs
     pub bitflags: u64,
     /// Index of the destination register for this instruction (0 if register is unused).
-    rd: u8,
+    pub rd: u8,
     /// Index of the first source register for this instruction (0 if register is unused).
-    rs1: u8,
+    pub rs1: u8,
     /// Index of the second source register for this instruction (0 if register is unused).
-    rs2: u8,
+    pub rs2: u8,
     /// "Immediate" value for this instruction (0 if unused).
-    imm: i64,
+    pub imm: i64,
     /// If this instruction is part of a "virtual sequence" (see Section 6.2 of the
     /// Jolt paper), then this contains the number of virtual instructions after this
     /// one in the sequence. I.e. if this is the last instruction in the sequence,
     /// `virtual_sequence_remaining` will be Some(0); if this is the penultimate instruction
     /// in the sequence, `virtual_sequence_remaining` will be Some(1); etc.
-    virtual_sequence_remaining: Option<usize>,
+    pub virtual_sequence_remaining: Option<usize>,
 }
 
 impl BytecodeRow {
@@ -220,19 +220,19 @@ pub fn random_bytecode_trace(
     trace
 }
 
-#[derive(Clone, CanonicalSerialize, CanonicalDeserialize)]
+#[derive(Clone, CanonicalSerialize, CanonicalDeserialize, Default)]
 pub struct BytecodePreprocessing<F: JoltField> {
     /// Size of the (padded) bytecode.
-    code_size: usize,
+    pub code_size: usize,
     /// MLE of init/final values. Bytecode is read-only data, so the final memory values are unchanged from
     /// the initial memory values. There are six values (address, bitflags, rd, rs1, rs2, imm)
     /// associated with each memory address, so `v_init_final` comprises six polynomials.
-    v_init_final: [MultilinearPolynomial<F>; 6],
+    pub v_init_final: [MultilinearPolynomial<F>; 6],
     /// Maps the memory address of each instruction in the bytecode to its "virtual" address.
     /// See Section 6.1 of the Jolt paper, "Reflecting the program counter". The virtual address
     /// is the one used to keep track of the next (potentially virtual) instruction to execute.
     /// Key: (ELF address, virtual sequence index or 0)
-    virtual_address_map: BTreeMap<(usize, usize), usize>,
+    pub virtual_address_map: BTreeMap<(usize, usize), usize>,
 }
 
 impl<F: JoltField> BytecodePreprocessing<F> {

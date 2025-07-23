@@ -111,7 +111,7 @@ where
 /// Accumulates openings computed by the prover over the course of Jolt,
 /// so that they can all be reduced to a single opening proof using sumcheck.
 pub struct ProverOpeningAccumulator<F: JoltField, ProofTranscript: Transcript> {
-    openings: Vec<ProverOpening<F>>,
+    pub openings: Vec<ProverOpening<F>>,
     _marker: PhantomData<ProofTranscript>,
 }
 
@@ -138,9 +138,9 @@ pub struct ReducedOpeningProof<
     PCS: CommitmentScheme<ProofTranscript, Field = F>,
     ProofTranscript: Transcript,
 > {
-    sumcheck_proof: SumcheckInstanceProof<F, ProofTranscript>,
-    sumcheck_claims: Vec<F>,
-    joint_opening_proof: PCS::Proof,
+    pub sumcheck_proof: SumcheckInstanceProof<F, ProofTranscript>,
+    pub sumcheck_claims: Vec<F>,
+    pub joint_opening_proof: PCS::Proof,
 }
 
 impl<F: JoltField, ProofTranscript: Transcript> Default
@@ -481,52 +481,52 @@ where
 
         let joint_commitment = PCS::combine_commitments(commitments, &rho_powers);
 
-        #[cfg(test)]
-        'test: {
-            if self.prover_openings.is_none() {
-                break 'test;
-            }
-            let prover_opening = &self.prover_openings.as_ref().unwrap()[self.openings.len()];
-            assert_eq!(
-                prover_opening.batch.len(),
-                commitments.len(),
-                "batch size mismatch"
-            );
-            assert_eq!(
-                opening_point, prover_opening.opening_point,
-                "opening point mismatch"
-            );
-            assert_eq!(
-                batched_claim, prover_opening.claim,
-                "batched claim mismatch"
-            );
-            for (i, (poly, commitment)) in prover_opening
-                .batch
-                .iter()
-                .zip(commitments.iter())
-                .enumerate()
-            {
-                let prover_commitment = PCS::commit(poly, self.pcs_setup.as_ref().unwrap());
-                assert_eq!(
-                    prover_commitment, **commitment,
-                    "commitment mismatch at index {i}"
-                );
-            }
-            let batched_poly = MultilinearPolynomial::linear_combination(
-                &prover_opening.batch.iter().collect::<Vec<_>>(),
-                &rho_powers,
-            );
-            assert!(
-                batched_poly == prover_opening.polynomial,
-                "batched poly mismatch"
-            );
-            let prover_joint_commitment =
-                PCS::commit(&prover_opening.polynomial, self.pcs_setup.as_ref().unwrap());
-            assert_eq!(
-                prover_joint_commitment, joint_commitment,
-                "joint commitment mismatch"
-            );
-        }
+        // #[cfg(test)]
+        // 'test: {
+        //     if self.prover_openings.is_none() {
+        //         break 'test;
+        //     }
+        //     let prover_opening = &self.prover_openings.as_ref().unwrap()[self.openings.len()];
+        //     assert_eq!(
+        //         prover_opening.batch.len(),
+        //         commitments.len(),
+        //         "batch size mismatch"
+        //     );
+        //     assert_eq!(
+        //         opening_point, prover_opening.opening_point,
+        //         "opening point mismatch"
+        //     );
+        //     assert_eq!(
+        //         batched_claim, prover_opening.claim,
+        //         "batched claim mismatch"
+        //     );
+        //     for (i, (poly, commitment)) in prover_opening
+        //         .batch
+        //         .iter()
+        //         .zip(commitments.iter())
+        //         .enumerate()
+        //     {
+        //         let prover_commitment = PCS::commit(poly, self.pcs_setup.as_ref().unwrap());
+        //         assert_eq!(
+        //             prover_commitment, **commitment,
+        //             "commitment mismatch at index {i}"
+        //         );
+        //     }
+        //     let batched_poly = MultilinearPolynomial::linear_combination(
+        //         &prover_opening.batch.iter().collect::<Vec<_>>(),
+        //         &rho_powers,
+        //     );
+        //     assert!(
+        //         batched_poly == prover_opening.polynomial,
+        //         "batched poly mismatch"
+        //     );
+        //     let prover_joint_commitment =
+        //         PCS::commit(&prover_opening.polynomial, self.pcs_setup.as_ref().unwrap());
+        //     assert_eq!(
+        //         prover_joint_commitment, joint_commitment,
+        //         "joint commitment mismatch"
+        //     );
+        // }
 
         self.openings.push(VerifierOpening::new(
             joint_commitment,

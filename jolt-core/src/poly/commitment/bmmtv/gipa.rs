@@ -259,7 +259,7 @@ mod tests {
             let mut ck_a_agg_challenge_exponents = vec![P::ScalarField::one()];
             let mut ck_b_agg_challenge_exponents = vec![P::ScalarField::one()];
             for (i, c) in transcript.iter().enumerate() {
-                let c_inv = JoltField::inverse(c).unwrap();
+                let c_inv = c.inverse().unwrap();
                 for j in 0..2_usize.pow(i as u32) {
                     ck_a_agg_challenge_exponents.push(ck_a_agg_challenge_exponents[j] * c_inv);
                     ck_b_agg_challenge_exponents.push(ck_b_agg_challenge_exponents[j] * c);

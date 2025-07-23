@@ -243,7 +243,7 @@ impl<const C: usize, I: ConstraintInput, F: JoltField, ProofTranscript: Transcri
 ///   This is needed for sumcheck.
 /// - Defines a mapping between inputs and Jolt's polynomial/commitment/opening types
 ///   (i.e. `JoltStuff<T>`).
-pub trait ConstraintInput: Clone + Copy + Debug + PartialEq + Sync + Send + 'static {
+pub trait ConstraintInput: Clone + Debug + PartialEq + Sync + Send + 'static {
     /// Returns a flat vector of all unique constraint inputs.
     /// This also serves as a canonical ordering over the inputs.
     fn flatten<const C: usize>() -> Vec<Self>;
@@ -255,7 +255,7 @@ pub trait ConstraintInput: Clone + Copy + Debug + PartialEq + Sync + Send + 'sta
 
     /// Converts an index to the corresponding constraint input.
     fn from_index<const C: usize>(index: usize) -> Self {
-        Self::flatten::<C>()[index]
+        Self::flatten::<C>()[index].clone()
     }
 
     /// Converts a constraint input to its index in the canonical

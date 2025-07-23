@@ -1008,11 +1008,6 @@ where
 
         for i in 0..num_sparse_layers {
             let previous_layer = &layers[i];
-            if i < 2 {
-                for chunk in previous_layer.coeffs.iter() {
-                    tracing::info!("construct layer {} previous_layer: {:?}", i, &chunk.iter().map(|coeff| coeff.value).collect_vec());
-                }
-            }
             layers.push(previous_layer.layer_output());
         }
 

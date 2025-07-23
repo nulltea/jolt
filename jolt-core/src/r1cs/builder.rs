@@ -492,7 +492,7 @@ impl OffsetEqConstraint {
     }
 }
 
-pub(crate) fn eval_offset_lc<F: JoltField>(
+pub fn eval_offset_lc<F: JoltField>(
     offset: &OffsetLC,
     flattened_polynomials: &[&MultilinearPolynomial<F>],
     step: usize,
@@ -509,12 +509,12 @@ pub(crate) fn eval_offset_lc<F: JoltField>(
 
 // TODO(sragss): Detailed documentation with wiki.
 pub struct CombinedUniformBuilder<const C: usize, F: JoltField, I: ConstraintInput> {
-    pub(crate) uniform_builder: R1CSBuilder<C, F, I>,
+    pub uniform_builder: R1CSBuilder<C, F, I>,
 
     /// Padded to the nearest power of 2
-    pub(crate) uniform_repeat: usize, // TODO(JP): Remove padding of steps
+    pub uniform_repeat: usize, // TODO(JP): Remove padding of steps
 
-    pub(crate) offset_equality_constraints: Vec<OffsetEqConstraint>,
+    pub offset_equality_constraints: Vec<OffsetEqConstraint>,
 }
 
 impl<const C: usize, F: JoltField, I: ConstraintInput> CombinedUniformBuilder<C, F, I> {
@@ -541,18 +541,18 @@ impl<const C: usize, F: JoltField, I: ConstraintInput> CombinedUniformBuilder<C,
     }
 
     /// Number of constraint rows per step, padded to the next power of two.
-    pub(super) fn padded_rows_per_step(&self) -> usize {
+    pub fn padded_rows_per_step(&self) -> usize {
         let num_constraints =
             self.uniform_builder.constraints.len() + self.offset_equality_constraints.len();
         num_constraints.next_power_of_two()
     }
 
     /// Total number of rows used across all repeated constraints. Not padded to nearest power of two.
-    pub(super) fn constraint_rows(&self) -> usize {
+    pub fn constraint_rows(&self) -> usize {
         self.uniform_repeat * self.padded_rows_per_step()
     }
 
-    pub(super) fn uniform_repeat(&self) -> usize {
+    pub fn uniform_repeat(&self) -> usize {
         self.uniform_repeat
     }
 

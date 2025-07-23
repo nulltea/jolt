@@ -88,14 +88,9 @@ where
         let output_mle = DensePolynomial::new_padded(outputs);
         let mut r: Vec<F> = transcript.challenge_vector(output_mle.get_num_vars());
         let mut claim = output_mle.evaluate(&r);
-        tracing::info!("initial r: {:?}", r);
-        tracing::info!("initial claim: {:?}", claim);
 
         for layer in self.layers() {
             proof_layers.push(layer.prove_layer(&mut claim, &mut r, transcript));
-            tracing::info!("r: {:?}", r);
-            tracing::info!("claim: {:?}", claim);
-            tracing::info!("--------------------");
         }
 
         (

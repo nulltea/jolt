@@ -35,12 +35,12 @@ use std::collections::HashSet;
 
 #[derive(Default, CanonicalSerialize, CanonicalDeserialize)]
 pub struct TimestampRangeCheckStuff<T: CanonicalSerialize + CanonicalDeserialize + Sync> {
-    read_cts_read_timestamp: [T; MEMORY_OPS_PER_INSTRUCTION],
-    read_cts_global_minus_read: [T; MEMORY_OPS_PER_INSTRUCTION],
-    final_cts_read_timestamp: [T; MEMORY_OPS_PER_INSTRUCTION],
-    final_cts_global_minus_read: [T; MEMORY_OPS_PER_INSTRUCTION],
+    pub read_cts_read_timestamp: [T; MEMORY_OPS_PER_INSTRUCTION],
+    pub read_cts_global_minus_read: [T; MEMORY_OPS_PER_INSTRUCTION],
+    pub final_cts_read_timestamp: [T; MEMORY_OPS_PER_INSTRUCTION],
+    pub final_cts_global_minus_read: [T; MEMORY_OPS_PER_INSTRUCTION],
 
-    identity: VerifierComputedOpening<T>,
+    pub identity: VerifierComputedOpening<T>,
 }
 
 impl<T: CanonicalSerialize + CanonicalDeserialize + Sync> StructuredPolynomialData<T>

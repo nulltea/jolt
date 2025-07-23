@@ -107,7 +107,7 @@ where
     ProofTranscript: Transcript,
 {
     pub shared: JoltVerifierPreprocessing<C, F, PCS, ProofTranscript>,
-    field: F::SmallValueLookupTables,
+    pub field: F::SmallValueLookupTables,
 }
 
 impl<const C: usize, F, PCS, ProofTranscript> JoltProverPreprocessing<C, F, PCS, ProofTranscript>
@@ -312,37 +312,40 @@ impl<F: JoltField> JoltPolynomials<F> {
         drop(_guard);
         drop(span);
 
-        let trace_polys = self.read_write_values();
+
+        let trace_polys = self.instruction_lookups.read_write_values();
         let trace_commitments = PCS::batch_commit(&trace_polys, &preprocessing.generators);
 
         commitments
+            .instruction_lookups
             .read_write_values_mut()
             .into_iter()
             .zip(trace_commitments.into_iter())
             .for_each(|(dest, src)| *dest = src);
 
-        let span = tracing::span!(tracing::Level::INFO, "commit::t_final");
-        let _guard = span.enter();
-        commitments.bytecode.t_final =
-            PCS::commit(&self.bytecode.t_final, &preprocessing.generators);
-        drop(_guard);
-        drop(span);
 
-        let span = tracing::span!(tracing::Level::INFO, "commit::read_write_memory");
-        let _guard = span.enter();
-        (
-            commitments.read_write_memory.v_final,
-            commitments.read_write_memory.t_final,
-        ) = join_conditional!(
-            || PCS::commit(&self.read_write_memory.v_final, &preprocessing.generators),
-            || PCS::commit(&self.read_write_memory.t_final, &preprocessing.generators)
-        );
+        // let span = tracing::span!(tracing::Level::INFO, "commit::t_final");
+        // let _guard = span.enter();
+        // commitments.bytecode.t_final =
+        //     PCS::commit(&self.bytecode.t_final, &preprocessing.generators);
+        // drop(_guard);
+        // drop(span);
+
+        // let span = tracing::span!(tracing::Level::INFO, "commit::read_write_memory");
+        // let _guard = span.enter();
+        // (
+        //     commitments.read_write_memory.v_final,
+        //     commitments.read_write_memory.t_final,
+        // ) = join_conditional!(
+        //     || PCS::commit(&self.read_write_memory.v_final, &preprocessing.generators),
+        //     || PCS::commit(&self.read_write_memory.t_final, &preprocessing.generators)
+        // );
         commitments.instruction_lookups.final_cts = PCS::batch_commit(
             &self.instruction_lookups.final_cts,
             &preprocessing.generators,
         );
-        drop(_guard);
-        drop(span);
+        // drop(_guard);
+        // drop(span);
 
         commitments
     }

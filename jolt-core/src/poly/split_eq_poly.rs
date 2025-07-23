@@ -19,11 +19,11 @@ use crate::{field::JoltField, poly::eq_poly::EqPolynomial};
 /// Note: all current applications of `SplitEqPolynomial` use the `LowToHigh` binding order. This
 /// means that we are iterating over `w` in the reverse order: `w.len()` down to `0`.
 pub struct GruenSplitEqPolynomial<F> {
-    pub(crate) current_index: usize,
-    pub(crate) current_scalar: F,
-    pub(crate) w: Vec<F>,
-    pub(crate) E_in_vec: Vec<Vec<F>>,
-    pub(crate) E_out_vec: Vec<Vec<F>>,
+    pub current_index: usize,
+    pub current_scalar: F,
+    pub w: Vec<F>,
+    pub E_in_vec: Vec<Vec<F>>,
+    pub E_out_vec: Vec<Vec<F>>,
 }
 
 /// Old struct for split equality polynomial, without Gruen's optimization

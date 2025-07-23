@@ -110,8 +110,9 @@ impl<const C: usize, F: JoltField, T: CanonicalSerialize + CanonicalDeserialize 
     }
 }
 
-impl<T: CanonicalSerialize + CanonicalDeserialize> StructuredPolynomialData<T>
-    for InstructionLookupStuff<T>
+impl<
+        T: CanonicalSerialize + CanonicalDeserialize,
+    > StructuredPolynomialData<T> for InstructionLookupStuff<T>
 {
     fn read_write_values(&self) -> Vec<&T> {
         self.dim
@@ -1277,7 +1278,8 @@ impl<F: JoltField> InstructionLookupPolynomials<F> {
         PCS: CommitmentScheme<ProofTranscript, Field = F>,
         ProofTranscript: Transcript,
     {
-        let mut commitments = InstructionLookupCommitments::<PCS, ProofTranscript>::initialize(preprocessing);
+        let mut commitments =
+            InstructionLookupCommitments::<PCS, ProofTranscript>::initialize(preprocessing);
 
         let trace_polys = self.read_write_values();
         let trace_commitments = PCS::batch_commit(&trace_polys, generators);
@@ -1288,15 +1290,39 @@ impl<F: JoltField> InstructionLookupPolynomials<F> {
             .zip(trace_commitments.into_iter())
             .for_each(|(dest, src)| *dest = src);
 
-  
-        commitments.final_cts = PCS::batch_commit(
-            &self.final_cts,
-            generators,
-        );
+        commitments.final_cts = PCS::batch_commit(&self.final_cts, generators);
 
         commitments
     }
 }
+
+// pub struct NoAuxStuff;
+
+// impl<T: CanonicalSerialize + CanonicalDeserialize>
+//     Initializable<T, InstructionLookupsPreprocessing<C, F>> for NoAuxStuff
+// {
+//     fn initialize(_preprocessing: &InstructionLookupsPreprocessing<C, F>) -> Self {
+//         NoAuxStuff
+//     }
+// }
+
+// impl<T: CanonicalSerialize + CanonicalDeserialize> StructuredPolynomialData<T> for NoAuxStuff {
+//     fn read_write_values(&self) -> Vec<&T> {
+//         vec![]
+//     }
+
+//     fn init_final_values(&self) -> Vec<&T> {
+//         vec![]
+//     }
+
+//     fn read_write_values_mut(&mut self) -> Vec<&mut T> {
+//         vec![]
+//     }
+
+//     fn init_final_values_mut(&mut self) -> Vec<&mut T> {
+//         vec![]
+//     }
+// }
 
 #[cfg(test)]
 mod tests {
