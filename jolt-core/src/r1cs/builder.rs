@@ -3,7 +3,7 @@ use super::{
     key::{CrossStepR1CS, CrossStepR1CSConstraint, SparseEqualityItem},
     ops::{Term, Variable, LC},
 };
-use crate::poly::multilinear_polynomial::MultilinearPolynomial;
+use crate::poly::{multilinear_polynomial::MultilinearPolynomial, spartan_interleaved_poly::SpartanInterleavedPolynomial};
 use crate::{
     field::JoltField,
     jolt::vm::JoltPolynomials,
@@ -18,7 +18,7 @@ use std::{
 };
 
 /// Constraints over a single row. Each variable points to a single item in Z and the corresponding coefficient.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Constraint {
     pub a: LC,
     pub b: LC,
@@ -26,8 +26,8 @@ pub struct Constraint {
 }
 
 impl Constraint {
-    #[cfg(test)]
-    pub(crate) fn _pretty_fmt<const C: usize, I: ConstraintInput, F: JoltField>(
+    // #[cfg(test)]
+    pub(crate) fn pretty_fmt<const C: usize, I: ConstraintInput, F: JoltField>(
         &self,
         f: &mut String,
         flattened_polynomials: &[&MultilinearPolynomial<F>],
@@ -75,9 +75,9 @@ impl Constraint {
 
 type AuxComputationFunction = dyn Fn(&[i128]) -> i128 + Send + Sync;
 
-struct AuxComputation<F: JoltField> {
-    symbolic_inputs: Vec<LC>,
-    compute: Box<AuxComputationFunction>,
+pub struct AuxComputation<F: JoltField> {
+    pub symbolic_inputs: Vec<LC>,
+    pub compute: Box<AuxComputationFunction>,
     _field: PhantomData<F>,
 }
 
@@ -182,8 +182,8 @@ impl<F: JoltField> AuxComputation<F> {
 
 pub struct R1CSBuilder<const C: usize, F: JoltField, I: ConstraintInput> {
     _inputs: PhantomData<I>,
-    pub(crate) constraints: Vec<Constraint>,
-    aux_computations: BTreeMap<usize, AuxComputation<F>>,
+    pub constraints: Vec<Constraint>,
+    pub aux_computations: BTreeMap<usize, AuxComputation<F>>,
 }
 
 impl<const C: usize, F: JoltField, I: ConstraintInput> Default for R1CSBuilder<C, F, I> {
@@ -622,5 +622,18 @@ impl<const C: usize, F: JoltField, I: ConstraintInput> CombinedUniformBuilder<C,
         }
 
         CrossStepR1CS { constraints }
+    }
+
+    #[tracing::instrument(skip_all)]
+    pub fn compute_spartan_Az_Bz_Cz(
+        &self,
+        flattened_polynomials: &[&MultilinearPolynomial<F>], // N variables of (S steps)
+    ) -> SpartanInterleavedPolynomial<F> {
+        SpartanInterleavedPolynomial::new(
+            &self.uniform_builder.constraints,
+            &self.offset_equality_constraints,
+            flattened_polynomials,
+            self.padded_rows_per_step(),
+        )
     }
 }

@@ -584,17 +584,17 @@ pub trait PolynomialBinding<F: JoltField> {
     fn final_sumcheck_claim(&self) -> F;
 }
 
-pub trait PolynomialEvaluation<F: JoltField> {
+pub trait PolynomialEvaluation<F: JoltField, Output=F> {
     /// Returns the final sumcheck claim about the polynomial.
-    fn evaluate(&self, r: &[F]) -> F;
+    fn evaluate(&self, r: &[F]) -> Output;
     /// Evaluates a batch of polynomials on the same point `r`.
     /// Returns: (evals, EQ table)
     /// where EQ table is EQ(x, r) for x \in {0, 1}^|r|. This is used for
     /// batched opening proofs (see opening_proof.rs)
-    fn batch_evaluate(polys: &[&Self], r: &[F]) -> (Vec<F>, Vec<F>);
+    fn batch_evaluate(polys: &[&Self], r: &[F]) -> (Vec<Output>, Vec<F>);
     /// Computes this polynomial's contribution to the computation of a prover
     /// sumcheck message (i.e. a univariate polynomial of the given `degree`).
-    fn sumcheck_evals(&self, index: usize, degree: usize, order: BindingOrder) -> Vec<F>;
+    fn sumcheck_evals(&self, index: usize, degree: usize, order: BindingOrder) -> Vec<Output>;
 }
 
 impl<F: JoltField> PolynomialBinding<F> for MultilinearPolynomial<F> {

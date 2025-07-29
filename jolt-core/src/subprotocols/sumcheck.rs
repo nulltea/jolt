@@ -171,7 +171,6 @@ impl<F: JoltField, ProofTranscript: Transcript> SumcheckInstanceProof<F, ProofTr
             eval_points.insert(1, previous_claim - eval_points[0]);
             let univariate_poly = UniPoly::from_evals(&eval_points);
             let compressed_poly = univariate_poly.compress();
-
             // append the prover's message to the transcript
             compressed_poly.append_to_transcript(transcript);
             let r_j = transcript.challenge_scalar();
@@ -193,60 +192,25 @@ impl<F: JoltField, ProofTranscript: Transcript> SumcheckInstanceProof<F, ProofTr
         (SumcheckInstanceProof::new(compressed_polys), r, final_evals)
     }
 
-    #[tracing::instrument(skip_all, name = "Spartan::prove_spartan_small_value")]
-    pub fn prove_spartan_small_value<const NUM_SVO_ROUNDS: usize>(
+    #[tracing::instrument(skip_all, name = "Spartan2::sumcheck::prove_spartan_cubic")]
+    pub fn prove_spartan_cubic(
         num_rounds: usize,
-        padded_num_constraints: usize,
-        uniform_constraints: &[Constraint],
-        cross_step_constraints: &[OffsetEqConstraint],
-        flattened_polys: &[&MultilinearPolynomial<F>],
-        tau: &[F],
+        eq_poly: &mut GruenSplitEqPolynomial<F>,
+        az_bz_cz_poly: &mut SpartanInterleavedPolynomial<F>,
         transcript: &mut ProofTranscript,
     ) -> (Self, Vec<F>, [F; 3]) {
-        let mut r = Vec::new();
-        let mut polys = Vec::new();
+        let mut r: Vec<F> = Vec::new();
+        let mut polys: Vec<CompressedUniPoly<F>> = Vec::new();
         let mut claim = F::zero();
 
-        // First, precompute the accumulators and also the `SpartanInterleavedPolynomial`
-        let (accums_zero, accums_infty, mut az_bz_cz_poly) =
-            SpartanInterleavedPolynomial::<NUM_SVO_ROUNDS, F>::new_with_precompute(
-                padded_num_constraints,
-                uniform_constraints,
-                cross_step_constraints,
-                flattened_polys,
-                tau,
-            );
-
-        let mut eq_poly = GruenSplitEqPolynomial::new(tau);
-
-        process_svo_sumcheck_rounds::<NUM_SVO_ROUNDS, F, ProofTranscript>(
-            &accums_zero,
-            &accums_infty,
-            &mut r,
-            &mut polys,
-            &mut claim,
-            transcript,
-            &mut eq_poly,
-        );
-
-        // Round NUM_SVO_ROUNDS : do the streaming sumcheck to compute cached values
-        az_bz_cz_poly.streaming_sumcheck_round(
-            &mut eq_poly,
-            transcript,
-            &mut r,
-            &mut polys,
-            &mut claim,
-        );
-
-        // Round (NUM_SVO_ROUNDS + 1)..num_rounds : do the linear time sumcheck
-        for _ in (NUM_SVO_ROUNDS + 1)..num_rounds {
-            az_bz_cz_poly.remaining_sumcheck_round(
-                &mut eq_poly,
-                transcript,
-                &mut r,
-                &mut polys,
-                &mut claim,
-            );
+        for round in 0..num_rounds {
+            if round == 0 {
+                az_bz_cz_poly
+                    .first_sumcheck_round(eq_poly, transcript, &mut r, &mut polys, &mut claim);
+            } else {
+                az_bz_cz_poly
+                    .subsequent_sumcheck_round(eq_poly, transcript, &mut r, &mut polys, &mut claim);
+            }
         }
 
         (

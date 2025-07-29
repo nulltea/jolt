@@ -11,7 +11,7 @@ use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use core::str::FromStr;
 use serde::{Deserialize, Serialize};
 use strum::EnumCount;
-use strum_macros::{EnumCount as EnumCountMacro, EnumIter, FromRepr};
+use strum_macros::{AsRefStr, EnumCount as EnumCountMacro, EnumIter, FromRepr};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct RVTraceRow {
@@ -424,7 +424,7 @@ impl RVTraceRow {
 
 // Reference: https://www.cs.sfu.ca/~ashriram/Courses/CS295/assets/notebooks/RISCV/RISCV_CARD.pdf
 #[derive(
-    Debug, PartialEq, Eq, Clone, Copy, FromRepr, Serialize, Deserialize, Hash, PartialOrd, Ord,
+    Debug, PartialEq, Eq, Clone, Copy, FromRepr, Serialize, Deserialize, Hash, PartialOrd, Ord, AsRefStr
 )]
 #[repr(u8)]
 #[allow(non_camel_case_types)]
@@ -672,7 +672,7 @@ impl Default for MemoryConfig {
     }
 }
 
-#[derive(Clone, PartialEq, Serialize, Deserialize, CanonicalSerialize, CanonicalDeserialize, Default)]
+#[derive(Clone, Copy, PartialEq, Serialize, Deserialize, CanonicalSerialize, CanonicalDeserialize, Default)]
 pub struct MemoryLayout {
     pub max_input_size: u64,
     pub max_output_size: u64,

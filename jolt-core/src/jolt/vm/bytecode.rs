@@ -45,8 +45,8 @@ pub struct BytecodeStuff<T: CanonicalSerialize + CanonicalDeserialize> {
     pub t_read: T,
     /// Final timestamps for offline memory-checking
     pub t_final: T,
-    a_init_final: VerifierComputedOpening<T>,
-    v_init_final: VerifierComputedOpening<[T; 6]>,
+    pub a_init_final: VerifierComputedOpening<T>,
+    pub v_init_final: VerifierComputedOpening<[T; 6]>,
 }
 
 /// Note –– F: JoltField bound is not enforced.

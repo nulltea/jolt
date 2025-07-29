@@ -186,7 +186,7 @@ impl<const C: usize, F: JoltField, I: ConstraintInput> UniformSpartanKey<C, I, F
     }
 
     /// (Prover) Evaluates RLC over A, B, C of: [A(r_x, y_var || r_x_step), A_shift(..)] for all y_var
-    #[tracing::instrument(skip_all, name = "UniformSpartanKey::evaluate_r1cs_mle_rlc")]
+    #[tracing::instrument(skip_all, name = "UniformSpartanKey::evaluate_r1cs_mle_rlc", level = "trace")]
     pub fn evaluate_matrix_mle_partial(&self, r_constr: &[F], r_step: &[F], r_rlc: F) -> Vec<F> {
         assert_eq!(
             r_constr.len(),

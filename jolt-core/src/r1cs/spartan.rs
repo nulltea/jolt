@@ -9,6 +9,7 @@ use crate::poly::multilinear_polynomial::MultilinearPolynomial;
 use crate::poly::multilinear_polynomial::PolynomialEvaluation;
 use crate::poly::opening_proof::ProverOpeningAccumulator;
 use crate::poly::opening_proof::VerifierOpeningAccumulator;
+use crate::poly::split_eq_poly::GruenSplitEqPolynomial;
 use crate::r1cs::key::UniformSpartanKey;
 use crate::utils::math::Math;
 use crate::utils::thread::drop_in_background_thread;
@@ -78,15 +79,15 @@ pub struct UniformSpartanProof<
     F: JoltField,
     ProofTranscript: Transcript,
 > {
-    _inputs: PhantomData<I>,
-    pub(crate) outer_sumcheck_proof: SumcheckInstanceProof<F, ProofTranscript>,
-    pub(crate) outer_sumcheck_claims: (F, F, F),
-    pub(crate) inner_sumcheck_proof: SumcheckInstanceProof<F, ProofTranscript>,
-    pub(crate) shift_sumcheck_proof: SumcheckInstanceProof<F, ProofTranscript>,
-    pub(crate) shift_sumcheck_claim: F,
-    pub(crate) claimed_witness_evals: Vec<F>,
-    pub(crate) shift_sumcheck_witness_evals: Vec<F>,
-    _marker: PhantomData<ProofTranscript>,
+    pub _inputs: PhantomData<I>,
+    pub outer_sumcheck_proof: SumcheckInstanceProof<F, ProofTranscript>,
+    pub outer_sumcheck_claims: (F, F, F),
+    pub inner_sumcheck_proof: SumcheckInstanceProof<F, ProofTranscript>,
+    pub shift_sumcheck_proof: SumcheckInstanceProof<F, ProofTranscript>,
+    pub shift_sumcheck_claim: F,
+    pub claimed_witness_evals: Vec<F>,
+    pub shift_sumcheck_witness_evals: Vec<F>,
+    pub _marker: PhantomData<ProofTranscript>,
 }
 
 impl<const C: usize, I, F, ProofTranscript> UniformSpartanProof<C, I, F, ProofTranscript>
@@ -130,18 +131,19 @@ where
         let tau = (0..num_rounds_x)
             .map(|_i| transcript.challenge_scalar())
             .collect::<Vec<F>>();
+        let mut eq_tau = GruenSplitEqPolynomial::new(&tau);
 
+        let mut az_bz_cz_poly = constraint_builder.compute_spartan_Az_Bz_Cz(&flattened_polys);
         let (outer_sumcheck_proof, outer_sumcheck_r, outer_sumcheck_claims) =
-            SumcheckInstanceProof::prove_spartan_small_value::<NUM_SVO_ROUNDS>(
+            SumcheckInstanceProof::prove_spartan_cubic(
                 num_rounds_x,
-                constraint_builder.padded_rows_per_step(),
-                &constraint_builder.uniform_builder.constraints,
-                &constraint_builder.offset_equality_constraints,
-                &flattened_polys,
-                &tau,
+                &mut eq_tau,
+                &mut az_bz_cz_poly,
                 transcript,
             );
         let outer_sumcheck_r: Vec<F> = outer_sumcheck_r.into_iter().rev().collect();
+       
+        drop_in_background_thread((az_bz_cz_poly, eq_tau));
 
         ProofTranscript::append_scalars(transcript, &outer_sumcheck_claims);
         // claims from the end of sum-check
@@ -210,6 +212,7 @@ where
         assert_eq!(poly_z.len(), poly_ABC.len());
 
         let num_rounds_inner_sumcheck = poly_ABC.len().log_2();
+
 
         let mut polys = vec![
             MultilinearPolynomial::LargeScalars(poly_ABC),

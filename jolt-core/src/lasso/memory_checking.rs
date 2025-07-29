@@ -392,13 +392,13 @@ where
             *opening = *eval;
         }
 
-        // opening_accumulator.append(
-        //     &polynomials.init_final_values(),
-        //     DensePolynomial::new(eq_init_final),
-        //     r_init_final.to_vec(),
-        //     &init_final_evals,
-        //     transcript,
-        // );
+        opening_accumulator.append(
+            &polynomials.init_final_values(),
+            DensePolynomial::new(eq_init_final),
+            r_init_final.to_vec(),
+            &init_final_evals,
+            transcript,
+        );
 
         (openings, exogenous_openings)
     }
@@ -608,12 +608,12 @@ where
             transcript,
         );
 
-        // opening_accumulator.append(
-        //     &commitments.init_final_values(),
-        //     r_init_final_opening.to_vec(),
-        //     &proof.openings.init_final_values(),
-        //     transcript,
-        // );
+        opening_accumulator.append(
+            &commitments.init_final_values(),
+            r_init_final_opening.to_vec(),
+            &proof.openings.init_final_values(),
+            transcript,
+        );
 
         Self::compute_verifier_openings(
             &mut proof.openings,

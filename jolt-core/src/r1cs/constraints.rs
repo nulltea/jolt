@@ -22,9 +22,9 @@ use super::{
 };
 
 pub const PC_START_ADDRESS: i64 = 0x80000000;
-const PC_NOOP_SHIFT: i64 = 4;
-const LOG_M: usize = 16;
-const OPERAND_SIZE: usize = LOG_M / 2;
+pub const PC_NOOP_SHIFT: i64 = 4;
+pub const LOG_M: usize = 16;
+pub const OPERAND_SIZE: usize = LOG_M / 2;
 
 pub trait R1CSConstraints<const C: usize, F: JoltField> {
     type Inputs: ConstraintInput;

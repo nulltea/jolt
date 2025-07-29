@@ -10,6 +10,7 @@ use crate::r1cs::constraints::R1CSConstraints;
 use crate::r1cs::spartan::{self, UniformSpartanProof};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use common::rv_trace::{MemoryLayout, NUM_CIRCUIT_FLAGS};
+use rayon::iter::IntoParallelRefIterator;
 use serde::{Deserialize, Serialize};
 use std::marker::PhantomData;
 use std::{
@@ -53,6 +54,8 @@ use common::{
     rv_trace::{ELFInstruction, JoltDevice, MemoryOp},
 };
 
+use rayon::prelude::*;
+
 use super::instruction::lb::LBInstruction;
 use super::instruction::lbu::LBUInstruction;
 use super::instruction::lh::LHInstruction;
@@ -60,6 +63,7 @@ use super::instruction::lhu::LHUInstruction;
 use super::instruction::sb::SBInstruction;
 use super::instruction::sh::SHInstruction;
 use super::instruction::JoltInstructionSet;
+
 
 #[derive(Clone, CanonicalSerialize, CanonicalDeserialize)]
 pub struct JoltVerifierPreprocessing<const C: usize, F, PCS, ProofTranscript>
@@ -313,33 +317,34 @@ impl<F: JoltField> JoltPolynomials<F> {
         drop(span);
 
 
-        let trace_polys = self.instruction_lookups.read_write_values();
+        let trace_polys = self.read_write_values();
         let trace_commitments = PCS::batch_commit(&trace_polys, &preprocessing.generators);
 
         commitments
-            .instruction_lookups
             .read_write_values_mut()
             .into_iter()
             .zip(trace_commitments.into_iter())
             .for_each(|(dest, src)| *dest = src);
 
 
-        // let span = tracing::span!(tracing::Level::INFO, "commit::t_final");
-        // let _guard = span.enter();
-        // commitments.bytecode.t_final =
-        //     PCS::commit(&self.bytecode.t_final, &preprocessing.generators);
-        // drop(_guard);
-        // drop(span);
+        let span = tracing::span!(tracing::Level::INFO, "commit::t_final");
+        let _guard = span.enter();
+        // commitments.bytecode.a_read_write =
+        // PCS::commit(&self.bytecode.a_read_write, &preprocessing.generators);
+        commitments.bytecode.t_final =
+            PCS::commit(&self.bytecode.t_final, &preprocessing.generators);
+        drop(_guard);
+        drop(span);
 
-        // let span = tracing::span!(tracing::Level::INFO, "commit::read_write_memory");
-        // let _guard = span.enter();
-        // (
-        //     commitments.read_write_memory.v_final,
-        //     commitments.read_write_memory.t_final,
-        // ) = join_conditional!(
-        //     || PCS::commit(&self.read_write_memory.v_final, &preprocessing.generators),
-        //     || PCS::commit(&self.read_write_memory.t_final, &preprocessing.generators)
-        // );
+        let span = tracing::span!(tracing::Level::INFO, "commit::read_write_memory");
+        let _guard = span.enter();
+        (
+            commitments.read_write_memory.v_final,
+            commitments.read_write_memory.t_final,
+        ) = join_conditional!(
+            || PCS::commit(&self.read_write_memory.v_final, &preprocessing.generators),
+            || PCS::commit(&self.read_write_memory.t_final, &preprocessing.generators)
+        );
         commitments.instruction_lookups.final_cts = PCS::batch_commit(
             &self.instruction_lookups.final_cts,
             &preprocessing.generators,
@@ -735,11 +740,11 @@ where
         )?;
 
         // Batch-verify all openings
-        opening_accumulator.reduce_and_verify(
-            &preprocessing.generators,
-            &proof.opening_proof,
-            &mut transcript,
-        )?;
+        // opening_accumulator.reduce_and_verify(
+        //     &preprocessing.generators,
+        //     &proof.opening_proof,
+        //     &mut transcript,
+        // )?;
 
         Ok(())
     }

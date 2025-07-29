@@ -1,11 +1,11 @@
 //! Defines the Linear Combination (LC) object and associated operations.
 //! A LinearCombination is a vector of Terms, where each Term is a pair of a Variable and a coefficient.
 
-#[cfg(test)]
+// #[cfg(test)]
 use super::inputs::ConstraintInput;
 use crate::{field::JoltField, poly::multilinear_polynomial::MultilinearPolynomial};
 use std::fmt::Debug;
-#[cfg(test)]
+// #[cfg(test)]
 use std::fmt::Write as _;
 use std::hash::Hash;
 
@@ -19,7 +19,7 @@ pub enum Variable {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Term(pub Variable, pub i64);
 impl Term {
-    #[cfg(test)]
+    // #[cfg(test)]
     fn pretty_fmt<const C: usize, I: ConstraintInput>(&self, f: &mut String) -> std::fmt::Result {
         match self.0 {
             Variable::Input(var_index) | Variable::Auxiliary(var_index) => match self.1.abs() {
@@ -101,7 +101,7 @@ impl LC {
             .sum()
     }
 
-    #[cfg(test)]
+    // #[cfg(test)]
     pub fn pretty_fmt<const C: usize, I: ConstraintInput>(
         &self,
         f: &mut String,

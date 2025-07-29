@@ -632,7 +632,7 @@ where
 
         let v_final: &CompactPolynomial<u32, F> = (&polynomials.v_final).try_into().unwrap();
         let t_final: &CompactPolynomial<u32, F> = (&polynomials.t_final).try_into().unwrap();
-        let final_fingerprints = (0..memory_size)
+        let final_fingerprints: Vec<_> = (0..memory_size)
             .into_par_iter()
             .map(|i| {
                 t_final[i].field_mul(gamma_squared)
