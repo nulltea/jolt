@@ -304,6 +304,9 @@ impl<F: JoltField> DensePolynomial<F> {
 
 impl<F: JoltField> Clone for DensePolynomial<F> {
     fn clone(&self) -> Self {
+        if self.len == 0 {
+            return Self::default();
+        }
         Self::new(self.Z[0..self.len].to_vec())
     }
 }

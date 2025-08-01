@@ -345,6 +345,13 @@ impl<F: JoltField> MultilinearPolynomial<F> {
             }
         }
     }
+
+    pub fn as_dense_poly_mut(&mut self) -> &mut DensePolynomial<F> {
+        match self {
+            MultilinearPolynomial::LargeScalars(poly) => poly,
+            _ => panic!("Expected large-scalar polynomial"),
+        }
+    }
 }
 
 impl<F: JoltField> From<Vec<F>> for MultilinearPolynomial<F> {

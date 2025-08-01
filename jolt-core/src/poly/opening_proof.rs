@@ -537,6 +537,7 @@ where
 
     /// Verifies that the given `reduced_opening_proof` (consisting of a sumcheck proof
     /// and a single opening proof) indeed proves the openings accumulated.
+    #[tracing::instrument(skip_all, name = "OpeningAccumulator::reduce_and_verify")]
     pub fn reduce_and_verify(
         &self,
         pcs_setup: &PCS::Setup,

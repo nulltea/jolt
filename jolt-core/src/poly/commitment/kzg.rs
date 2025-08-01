@@ -23,7 +23,7 @@ where
     pub g2_powers: Vec<P::G2Affine>,
     pub g_products: Vec<P::G1Affine>,
     // g1_powers in icicle's GPU types
-    pub gpu_g1: Option<Vec<GpuBaseType<P::G1>>>,
+    // pub gpu_g1: Option<Vec<GpuBaseType<P::G1>>>,
 }
 
 impl<P: Pairing> SRS<P>
@@ -93,21 +93,21 @@ where
             })
             .collect();
 
-        #[cfg(feature = "icicle")]
-        let gpu_g1 = Some(
-            g1_powers
-                .par_iter()
-                .map(<P::G1 as Icicle>::from_ark_affine)
-                .collect::<Vec<_>>(),
-        );
-        #[cfg(not(feature = "icicle"))]
-        let gpu_g1 = None;
+        // #[cfg(feature = "icicle")]
+        // let gpu_g1 = Some(
+        //     g1_powers
+        //         .par_iter()
+        //         .map(<P::G1 as Icicle>::from_ark_affine)
+        //         .collect::<Vec<_>>(),
+        // );
+        // #[cfg(not(feature = "icicle"))]
+        // let gpu_g1 = None;
 
         Self {
             g1_powers,
             g2_powers,
             g_products,
-            gpu_g1,
+            // gpu_g1,
         }
     }
 
@@ -176,10 +176,11 @@ where
     }
 
     pub fn gpu_g1(&self) -> Option<&[GpuBaseType<P::G1>]> {
-        self.srs
-            .gpu_g1
-            .as_ref()
-            .map(|gpu_g1| &gpu_g1[self.offset..self.offset + self.supported_size])
+        // self.srs
+        //     .gpu_g1
+        //     .as_ref()
+        //     .map(|gpu_g1| &gpu_g1[self.offset..self.offset + self.supported_size])
+        None
     }
 }
 

@@ -2,9 +2,9 @@ use super::{
     multilinear_polynomial::MultilinearPolynomial, sparse_interleaved_poly::SparseCoefficient,
     split_eq_poly::GruenSplitEqPolynomial, unipoly::CompressedUniPoly,
 };
-#[cfg(test)]
+// #[cfg(test)]
 use crate::poly::dense_mlpoly::DensePolynomial;
-#[cfg(test)]
+// #[cfg(test)]
 use crate::r1cs::inputs::JoltR1CSInputs;
 use crate::subprotocols::sumcheck::process_eq_sumcheck_round;
 use crate::{
@@ -70,7 +70,7 @@ impl<F: JoltField> SpartanInterleavedPolynomial<F> {
                     // Cz = Az ⊙ Cz
                     if !az_coeff.is_zero() && !bz_coeff.is_zero() {
                         let cz_coeff = az_coeff * bz_coeff;
-                        #[cfg(test)]
+                        // #[cfg(test)]
                         {
                             if cz_coeff != constraint
                                 .c
@@ -126,7 +126,7 @@ impl<F: JoltField> SpartanInterleavedPolynomial<F> {
                     if !az_coeff.is_zero() {
 
                         // If Az != 0, then the condition must be false (i.e. Bz = 0)
-                        #[cfg(test)]
+                        // #[cfg(test)]
                         {
                             let bz_coeff = eval_offset_lc(
                                 &constraint.cond,
@@ -159,7 +159,7 @@ impl<F: JoltField> SpartanInterleavedPolynomial<F> {
         let unbound_coeffs_shards: Vec<Vec<SparseCoefficient<i128>>> =
             unbound_coeffs_shards_iter.collect();
 
-        #[cfg(test)]
+        // #[cfg(test)]
         {
             // Check that indices are monotonically increasing
             for shard in &unbound_coeffs_shards {
@@ -186,7 +186,7 @@ impl<F: JoltField> SpartanInterleavedPolynomial<F> {
         }
     }
 
-    #[cfg(test)]
+    // #[cfg(test)]
     fn uninterleave(&self) -> (DensePolynomial<F>, DensePolynomial<F>, DensePolynomial<F>) {
         let mut az = vec![F::zero(); self.dense_len];
         let mut bz = vec![F::zero(); self.dense_len];
@@ -405,7 +405,7 @@ impl<F: JoltField> SpartanInterleavedPolynomial<F> {
             });
 
 
-        #[cfg(test)]
+        // #[cfg(test)]
         let (mut az_for_test, mut bz_for_test, mut cz_for_test) = {
             let original_dense_len = self.dense_len; // dense_len before it's halved for self
             let mut az_vec = vec![F::zero(); original_dense_len];
@@ -437,7 +437,7 @@ impl<F: JoltField> SpartanInterleavedPolynomial<F> {
 
         self.dense_len /= 2;
 
-        #[cfg(test)]
+        // #[cfg(test)]
         {
             // Check that the binding is consistent with binding Az, Bz, Cz individually
             let (az_bound, bz_bound, cz_bound) = self.uninterleave();
@@ -610,7 +610,7 @@ impl<F: JoltField> SpartanInterleavedPolynomial<F> {
 
         let r_i = process_eq_sumcheck_round(quadratic_evals, eq_poly, polys, r, claim, transcript);
 
-        #[cfg(test)]
+        // #[cfg(test)]
         let (mut az, mut bz, mut cz) = self.uninterleave();
 
         let output_sizes: Vec<_> = chunks
@@ -692,7 +692,7 @@ impl<F: JoltField> SpartanInterleavedPolynomial<F> {
         std::mem::swap(&mut self.bound_coeffs, &mut self.binding_scratch_space);
         self.dense_len /= 2;
 
-        #[cfg(test)]
+        // #[cfg(test)]
         {
             // Check that the binding is consistent with binding Az, Bz, Cz individually
             let (az_bound, bz_bound, cz_bound) = self.uninterleave();

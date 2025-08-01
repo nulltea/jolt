@@ -173,7 +173,7 @@ where
             .ok_or(ProofVerifyError::KeyLengthError(bases.len(), scalars.len()))
     }
 
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(skip_all, level = "trace")]
     fn msm(
         bases: &[Self::MulBase],
         gpu_bases: Option<&[GpuBaseType<Self>]>,
@@ -534,7 +534,7 @@ fn map_field_elements_to_u64<F: PrimeField>(field_elements: &[F]) -> Vec<u64> {
 }
 
 // Compute msm using windowed non-adjacent form
-#[tracing::instrument(skip_all)]
+#[tracing::instrument(skip_all, level = "trace")]
 fn msm_bigint_wnaf<F: JoltField + PrimeField, V: VariableBaseMSM<ScalarField = F>>(
     bases: &[V::MulBase],
     scalars: &[<F as PrimeField>::BigInt],
@@ -734,7 +734,7 @@ fn make_digits_bigint(
 }
 
 /// Optimized implementation of multi-scalar multiplication.
-#[tracing::instrument(skip_all)]
+#[tracing::instrument(skip_all, level = "trace")]
 fn msm_medium<F, V, T>(
     bases: &[V::MulBase],
     _gpu_bases: Option<&[GpuBaseType<V>]>,
@@ -834,7 +834,7 @@ where
             })
 }
 
-#[tracing::instrument(skip_all)]
+#[tracing::instrument(skip_all, level = "trace")]
 fn msm_binary<F: JoltField, V: VariableBaseMSM<ScalarField = F>, T: Integer>(
     bases: &[V::MulBase],
     scalars: &[T],
@@ -847,7 +847,7 @@ fn msm_binary<F: JoltField, V: VariableBaseMSM<ScalarField = F>, T: Integer>(
         .fold(V::zero(), |sum, base| sum + base)
 }
 
-#[tracing::instrument(skip_all)]
+#[tracing::instrument(skip_all, level = "trace")]
 fn msm_small<F, V, T>(bases: &[V::MulBase], scalars: &[T], max_num_bits: usize) -> V
 where
     F: JoltField,

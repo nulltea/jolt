@@ -32,7 +32,7 @@ impl<F: JoltField> AppendToTranscript for MockCommitment<F> {
 
 #[derive(CanonicalSerialize, CanonicalDeserialize)]
 pub struct MockProof<F: JoltField> {
-    opening_point: Vec<F>,
+    pub opening_point: Vec<F>,
 }
 
 impl<F, ProofTranscript> CommitmentScheme<ProofTranscript> for MockCommitScheme<F, ProofTranscript>

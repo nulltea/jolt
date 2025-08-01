@@ -64,7 +64,6 @@ use super::instruction::sb::SBInstruction;
 use super::instruction::sh::SHInstruction;
 use super::instruction::JoltInstructionSet;
 
-
 #[derive(Clone, CanonicalSerialize, CanonicalDeserialize)]
 pub struct JoltVerifierPreprocessing<const C: usize, F, PCS, ProofTranscript>
 where
@@ -316,16 +315,17 @@ impl<F: JoltField> JoltPolynomials<F> {
         drop(_guard);
         drop(span);
 
-
+        let span = tracing::span!(tracing::Level::INFO, "commit::trace");
+        let _guard = span.enter();
         let trace_polys = self.read_write_values();
         let trace_commitments = PCS::batch_commit(&trace_polys, &preprocessing.generators);
-
+        drop(_guard);
+        drop(span);
         commitments
             .read_write_values_mut()
             .into_iter()
             .zip(trace_commitments.into_iter())
             .for_each(|(dest, src)| *dest = src);
-
 
         let span = tracing::span!(tracing::Level::INFO, "commit::t_final");
         let _guard = span.enter();

@@ -147,10 +147,10 @@ icicle-bn254 = { git = "https://github.com/ingonyama-zk/icicle-jolt.git", rev = 
 [target.'cfg(all(not(target_arch = "wasm32"), not(target_os = "macos")))'.dependencies]
 icicle-core = { git = "https://github.com/ingonyama-zk/icicle-jolt.git", rev = "2441eba", optional = true }
 icicle-runtime = { git = "https://github.com/ingonyama-zk/icicle-jolt.git", features = [
-    "cuda_backend",
+    # "cuda_backend",
 ], rev = "2441eba", optional = true }
 icicle-bn254 = { git = "https://github.com/ingonyama-zk/icicle-jolt.git", features = [
-    "cuda_backend",
+    # "cuda_backend",
 ], rev = "2441eba", optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
