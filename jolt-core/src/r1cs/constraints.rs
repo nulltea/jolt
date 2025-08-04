@@ -28,6 +28,7 @@ pub const OPERAND_SIZE: usize = LOG_M / 2;
 
 pub trait R1CSConstraints<const C: usize, F: JoltField> {
     type Inputs: ConstraintInput;
+    #[tracing::instrument(skip_all, name = "R1CSConstraints::construct_constraints", level = "trace")]
     fn construct_constraints(
         padded_trace_length: usize,
         memory_start: u64,
