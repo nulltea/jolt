@@ -628,7 +628,7 @@ impl<F: JoltField> PolynomialBinding<F> for MultilinearPolynomial<F> {
         }
     }
 
-    #[tracing::instrument(skip_all, name = "MultilinearPolynomial::bind_parallel")]
+    #[tracing::instrument(skip_all, name = "MultilinearPolynomial::bind_parallel", level = "trace")]
     fn bind_parallel(&mut self, r: F, order: BindingOrder) {
         match self {
             MultilinearPolynomial::LargeScalars(poly) => poly.bind_parallel(r, order),
