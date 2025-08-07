@@ -579,7 +579,7 @@ impl<F: JoltField> Valid for MultilinearPolynomial<F> {
     }
 }
 
-pub trait PolynomialBinding<F: JoltField> {
+pub trait PolynomialBinding<F: JoltField, Coeff=F> {
     /// Returns whether or not the polynomial has been bound (in a sumcheck)
     fn is_bound(&self) -> bool;
     /// Binds the polynomial to a random field element `r`.
@@ -588,7 +588,7 @@ pub trait PolynomialBinding<F: JoltField> {
     /// by coefficient.
     fn bind_parallel(&mut self, r: F, order: BindingOrder);
     /// Returns the final sumcheck claim about the polynomial.
-    fn final_sumcheck_claim(&self) -> F;
+    fn final_sumcheck_claim(&self) -> Coeff;
 }
 
 pub trait PolynomialEvaluation<F: JoltField, Output=F> {
