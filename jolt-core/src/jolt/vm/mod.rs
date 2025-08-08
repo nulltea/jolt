@@ -13,6 +13,7 @@ use common::rv_trace::{MemoryLayout, NUM_CIRCUIT_FLAGS};
 use rayon::iter::IntoParallelRefIterator;
 use serde::{Deserialize, Serialize};
 use std::marker::PhantomData;
+use std::sync::Arc;
 use std::{
     fs::File,
     io::{Read, Write},
@@ -72,7 +73,7 @@ where
     ProofTranscript: Transcript,
 {
     pub generators: PCS::Setup,
-    pub instruction_lookups: InstructionLookupsPreprocessing<C, F>,
+    pub instruction_lookups: Arc<InstructionLookupsPreprocessing<C, F>>,
     pub bytecode: BytecodePreprocessing<F>,
     pub read_write_memory: ReadWriteMemoryPreprocessing,
     pub memory_layout: MemoryLayout,
@@ -421,7 +422,7 @@ where
         JoltVerifierPreprocessing {
             generators,
             memory_layout,
-            instruction_lookups: instruction_lookups_preprocessing,
+            instruction_lookups: Arc::new(instruction_lookups_preprocessing),
             bytecode: bytecode_preprocessing,
             read_write_memory: read_write_memory_preprocessing,
         }
