@@ -101,7 +101,9 @@ impl<T: CanonicalSerialize + CanonicalDeserialize> StructuredPolynomialData<T>
 pub type BytecodeProof<F, PCS, ProofTranscript> =
     MemoryCheckingProof<F, PCS, BytecodeOpenings<F>, NoExogenousOpenings, ProofTranscript>;
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, PartialEq, Serialize, Deserialize, CanonicalSerialize, CanonicalDeserialize,
+)]
 pub struct BytecodeRow {
     /// Memory address as read from the ELF.
     pub address: usize,
