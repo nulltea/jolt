@@ -7,7 +7,9 @@ use alloc::{
     string::{String, ToString},
     vec::Vec,
 };
-use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
+use ark_serialize::{
+    CanonicalDeserialize, CanonicalSerialize, Compress, SerializationError, Valid, Validate,
+};
 use core::str::FromStr;
 use serde::{Deserialize, Serialize};
 use strum::EnumCount;
@@ -27,6 +29,73 @@ pub struct RVTraceRow {
 pub enum MemoryOp {
     Read(u64),       // (address)
     Write(u64, u64), // (address, new_value)
+}
+
+impl CanonicalSerialize for MemoryOp {
+    fn serialize_with_mode<W: std::io::Write>(
+        &self,
+        mut writer: W,
+        compress: Compress,
+    ) -> Result<(), SerializationError> {
+        match self {
+            MemoryOp::Read(address) => {
+                (0_u8).serialize_with_mode(&mut writer, compress)?;
+                address.serialize_with_mode(&mut writer, compress)?;
+            }
+            MemoryOp::Write(address, value) => {
+                (1_u8).serialize_with_mode(&mut writer, compress)?;
+                address.serialize_with_mode(&mut writer, compress)?;
+                value.serialize_with_mode(&mut writer, compress)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn serialized_size(&self, compress: Compress) -> usize {
+        match self {
+            MemoryOp::Read(address) => {
+                (0_u8).serialized_size(compress) + address.serialized_size(compress)
+            }
+            MemoryOp::Write(address, value) => {
+                (1_u8).serialized_size(compress)
+                    + address.serialized_size(compress)
+                    + value.serialized_size(compress)
+            }
+        }
+    }
+}
+
+impl CanonicalDeserialize for MemoryOp {
+    fn deserialize_with_mode<R: std::io::Read>(
+        mut reader: R,
+        compress: Compress,
+        validate: Validate,
+    ) -> Result<Self, SerializationError> {
+        // TODO(protoben) Can we use strum for this?
+        let discriminant = u8::deserialize_with_mode(&mut reader, compress, validate)?;
+        let res = match discriminant {
+            0 => MemoryOp::Read(u64::deserialize_with_mode(&mut reader, compress, validate)?),
+            1 => MemoryOp::Write(
+                u64::deserialize_with_mode(&mut reader, compress, validate)?,
+                u64::deserialize_with_mode(&mut reader, compress, validate)?,
+            ),
+            _ => Err(SerializationError::InvalidData)?,
+        };
+        Ok(res)
+    }
+}
+
+impl Valid for MemoryOp {
+    fn check(&self) -> Result<(), SerializationError> {
+        match self {
+            MemoryOp::Read(inner) => inner.check(),
+            MemoryOp::Write(address, new_value) => {
+                address.check()?;
+                new_value.check()?;
+                Ok(())
+            }
+        }
+    }
 }
 
 impl MemoryOp {
@@ -424,7 +493,18 @@ impl RVTraceRow {
 
 // Reference: https://www.cs.sfu.ca/~ashriram/Courses/CS295/assets/notebooks/RISCV/RISCV_CARD.pdf
 #[derive(
-    Debug, PartialEq, Eq, Clone, Copy, FromRepr, Serialize, Deserialize, Hash, PartialOrd, Ord, AsRefStr
+    Debug,
+    PartialEq,
+    Eq,
+    Clone,
+    Copy,
+    FromRepr,
+    Serialize,
+    Deserialize,
+    Hash,
+    PartialOrd,
+    Ord,
+    AsRefStr,
 )]
 #[repr(u8)]
 #[allow(non_camel_case_types)]
@@ -672,7 +752,16 @@ impl Default for MemoryConfig {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Serialize, Deserialize, CanonicalSerialize, CanonicalDeserialize, Default)]
+#[derive(
+    Clone,
+    Copy,
+    PartialEq,
+    Serialize,
+    Deserialize,
+    CanonicalSerialize,
+    CanonicalDeserialize,
+    Default,
+)]
 pub struct MemoryLayout {
     pub max_input_size: u64,
     pub max_output_size: u64,
