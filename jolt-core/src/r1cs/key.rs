@@ -16,7 +16,7 @@ use crate::utils::math::Math;
 
 #[derive(CanonicalSerialize, CanonicalDeserialize)]
 pub struct UniformSpartanKey<const C: usize, I: ConstraintInput, F: JoltField> {
-    _inputs: PhantomData<I>,
+    pub _inputs: PhantomData<I>,
     pub uniform_r1cs: UniformR1CS<F>,
 
     pub offset_eq_r1cs: CrossStepR1CS<F>,
@@ -408,7 +408,11 @@ impl<const C: usize, F: JoltField, I: ConstraintInput> UniformSpartanKey<C, I, F
     }
 
     /// Returns the digest of the r1cs shape
-    fn digest(uniform_r1cs: &UniformR1CS<F>, offset_eq: &CrossStepR1CS<F>, num_steps: usize) -> F {
+    pub fn digest(
+        uniform_r1cs: &UniformR1CS<F>,
+        offset_eq: &CrossStepR1CS<F>,
+        num_steps: usize,
+    ) -> F {
         let mut hash_bytes = Vec::new();
         uniform_r1cs.serialize_compressed(&mut hash_bytes).unwrap();
         let mut offset_eq_bytes = Vec::new();
