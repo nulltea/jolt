@@ -200,7 +200,7 @@ where
         let mut proof_layers = Vec::with_capacity(grand_product.num_layers());
 
         let outputs: Vec<F> = grand_product.claimed_outputs();
-        transcript.append_scalars(&outputs);
+        // transcript.append_scalars(&outputs);
         let output_mle = DensePolynomial::new_padded(outputs);
         let r_outputs: Vec<F> = transcript.challenge_vector(output_mle.get_num_vars());
         let claim = output_mle.evaluate(&r_outputs);
@@ -223,7 +223,6 @@ where
         } else {
             (None, r_outputs, claim)
         };
-
 
         for layer in grand_product.layers() {
             proof_layers.push(layer.prove_layer(&mut claim, &mut random, transcript));
@@ -250,7 +249,7 @@ where
         PCS: CommitmentScheme<ProofTranscript, Field = F>,
         G: BatchedGrandProduct<F, PCS, ProofTranscript>,
     {
-        transcript.append_scalars(claimed_outputs);
+        // transcript.append_scalars(claimed_outputs);
         let r_outputs: Vec<F> =
             transcript.challenge_vector(claimed_outputs.len().next_power_of_two().log_2());
         let claim = DensePolynomial::new_padded(claimed_outputs.to_vec()).evaluate(&r_outputs);

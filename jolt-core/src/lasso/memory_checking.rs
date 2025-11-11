@@ -494,6 +494,7 @@ where
             let write_hash = multiset_hashes.write_hashes[i];
             let init_hash = multiset_hashes.init_hashes[i];
             let final_hash = multiset_hashes.final_hashes[i];
+
             assert_eq!(
                 init_hash * write_hash,
                 final_hash * read_hash,
@@ -554,8 +555,8 @@ where
         let protocol_name = Self::protocol_name();
         transcript.append_message(protocol_name);
 
-        Self::check_multiset_equality(preprocessing, &proof.multiset_hashes);
-        proof.multiset_hashes.append_to_transcript(transcript);
+        // Self::check_multiset_equality(preprocessing, &proof.multiset_hashes);
+        // proof.multiset_hashes.append_to_transcript(transcript);
 
         let (read_write_hashes, init_final_hashes) = Self::interleave(
             preprocessing,

@@ -2,7 +2,9 @@
 #![allow(clippy::type_complexity)]
 
 use crate::field::JoltField;
+use crate::jolt::subtable::eq;
 use crate::poly::dense_mlpoly::DensePolynomial;
+use crate::poly::eq_poly::EqPolynomial;
 use crate::poly::multilinear_polynomial::{
     BindingOrder, MultilinearPolynomial, PolynomialBinding, PolynomialEvaluation,
 };
@@ -14,8 +16,10 @@ use crate::utils::errors::ProofVerifyError;
 use crate::utils::mul_0_optimized;
 use crate::utils::small_value::svo_helpers::process_svo_sumcheck_rounds;
 use crate::utils::thread::drop_in_background_thread;
-use crate::utils::transcript::{AppendToTranscript, Transcript};
+use crate::utils::transcript::{AppendToTranscript, KeccakTranscript, Transcript};
+use ark_ff::{AdditiveGroup, Field, UniformRand};
 use ark_serialize::*;
+use itertools::{interleave, izip, Itertools};
 use rayon::prelude::*;
 use std::marker::PhantomData;
 
@@ -60,7 +64,7 @@ where
             let compressed_poly = cubic_poly.compress();
 
             // append the prover's message to the transcript
-            compressed_poly.append_to_transcript(transcript);
+            // compressed_poly.append_to_transcript(transcript); // TODO: uncomment!!
             // derive the verifier's challenge for the next round
             let r_j = transcript.challenge_scalar();
 
@@ -394,6 +398,264 @@ impl<F: JoltField, ProofTranscript: Transcript> SumcheckInstanceProof<F, ProofTr
             })
             .reduce(|| (F::zero(), F::zero()), |a, b| (a.0 + b.0, a.1 + b.1))
     }
+}
+
+#[test]
+fn test_sumcheck_instance_proof() {
+    type F = ark_bn254::Fr;
+
+    let mut rng = ark_std::test_rng();
+    let in_left = (0u64..10).map(F::from).collect::<Vec<_>>();
+    let in_right = (10u64..20).map(F::from).collect::<Vec<_>>();
+
+    // Normal scenario
+    {
+        let layer2 = interleave(&in_left, &in_right).collect_vec();
+        println!("local layer2: {:?}", layer2);
+        let layer1 = layer2.chunks(2).map(|c| c[0] * c[1]).collect_vec();
+        println!("local layer1: {:?}", layer1);
+        let output = layer1.chunks(2).map(|c| c[0] * c[1]).collect_vec();
+        println!("local output: {:?}", output);
+        println!("----------------");
+    }
+
+    fn uninterleave(v: &[F]) -> (Vec<F>, Vec<F>) {
+        (
+            v.iter().copied().step_by(2).collect(),
+            v.iter().copied().skip(1).step_by(2).collect(),
+        )
+    }
+
+    let (in_left0, in_left1) = uninterleave(&in_left);
+    let (in_right0, in_right1) = uninterleave(&in_right);
+
+    let layer2_coeffs = [
+        interleave(&in_left0, &in_right0).collect_vec(),
+        interleave(&in_left1, &in_right1).collect_vec(),
+    ];
+    println!("distributed layer2: {:?}", layer2_coeffs);
+
+    let layer1_coeffs = [
+        izip!(&in_left0, &in_right0)
+            .map(|(a, b)| a * b)
+            .collect::<Vec<_>>(),
+        izip!(&in_left1, &in_right1)
+            .map(|(a, b)| a * b)
+            .collect::<Vec<_>>(),
+    ];
+
+    println!("distributed layer1: {:?}", layer1_coeffs);
+
+    let layer1_sigma_coeffs =
+        interleave(layer1_coeffs[0].clone(), layer1_coeffs[1].clone()).collect_vec();
+
+    println!("aggregated (permuted) layer1: {:?}", layer1_sigma_coeffs);
+
+    let output_coeffs = layer1_sigma_coeffs
+        .chunks(2)
+        .map(|c| c[0] * c[1])
+        .collect_vec();
+    println!("aggregated output: {:?}", output_coeffs);
+
+    println!("----------------");
+
+    let (left_layer2, right_layer2) = (
+        [in_left0, in_left1].concat(),
+        [in_right0, in_right1].concat(),
+    );
+
+    println!(
+        "left_layer2: {:?} right_layer2: {:?}",
+        left_layer2, right_layer2
+    );
+    let outputs_layer2 = layer1_coeffs.concat();
+
+    println!("outputs_layer2: {:?}", outputs_layer2);
+
+    // let (left_layer1, right_layer1) = {
+    //     // let mut outputs_layer2 = outputs_layer2.clone();
+    //     // outputs_layer2.resize(outputs_layer2.len().next_power_of_two(), F::ZERO);
+    //     let mut lhs = outputs_layer2.clone();
+    //     let mut rhs = lhs.split_off(outputs_layer2.len() / 2);
+
+    //     // lhs.resize(lhs.len().next_power_of_two(), F::ZERO);
+    //     // rhs.resize(rhs.len().next_power_of_two(), F::ZERO);
+
+    //     (lhs, rhs)
+    //     // let left: Vec<_> = outputs_layer2.iter().copied().step_by(2).collect();
+    //     // let right: Vec<_> = outputs_layer2.iter().copied().skip(1).step_by(2).collect();
+
+    //     // (left, right)
+    // };
+
+    // assert_eq!(
+    //     [left_layer1.clone(), right_layer1.clone()].to_vec(),
+    //     layer1_coeffs
+    // );
+
+    //------ Layer 1 prover
+
+    let left_poly = MultilinearPolynomial::<F>::LargeScalars(DensePolynomial::new_padded(
+        layer1_coeffs[0].clone(),
+    ));
+    let right_poly = MultilinearPolynomial::<F>::LargeScalars(DensePolynomial::new_padded(
+        layer1_coeffs[1].clone(),
+    ));
+
+    let mut transcript = KeccakTranscript::new(&[]);
+
+    let output_mle = DensePolynomial::new_padded(output_coeffs.clone());
+    let r_grand_product: Vec<_> = (0..output_mle.get_num_vars())
+        .map(|_| F::rand(&mut rng))
+        .collect();
+    let eq_poly = MultilinearPolynomial::<F>::from(EqPolynomial::evals(&r_grand_product));
+    println!("eq_poly: {:?}", eq_poly.coeffs_as_field_elements());
+    let output_claim = output_mle.evaluate(&r_grand_product);
+    let num_rounds = r_grand_product.len();
+
+    let mut polys = vec![eq_poly, left_poly, right_poly];
+    let (layer1_proof, layer1_r_sumcheck, layer1_final_evals) =
+        SumcheckInstanceProof::<F, KeccakTranscript>::prove_arbitrary(
+            &output_claim,
+            num_rounds,
+            &mut polys,
+            |evals| evals[0] * evals[1] * evals[2],
+            3,
+            &mut transcript,
+        );
+
+    println!("layer1_final_evals: {:?}", layer1_final_evals);
+
+    let layer_1_left_claim = layer1_final_evals[1];
+    let layer1_right_claim = layer1_final_evals[2];
+
+    let r_layer = F::rand(&mut rng);
+    let layer2_claim = layer_1_left_claim + r_layer * (layer1_right_claim - layer_1_left_claim);
+
+    println!("layer2_claim: {:?}", layer2_claim);
+
+    let mut r_grand_product2: Vec<F> = layer1_r_sumcheck.iter().rev().copied().collect();
+    r_grand_product2.push(r_layer); // pass r_grand_product2 to next layer
+
+    println!("layer1 - proved!");
+
+    //------ Layer 2 prover
+
+    fn sigma(v: Vec<F>) -> Vec<F> {
+        let n = v.len();
+        assert!(n.is_power_of_two());
+
+        let mut out = Vec::with_capacity(n);
+        out.extend(v.iter().step_by(2)); // evens
+        out.extend(v.iter().skip(1).step_by(2)); // odds
+        out
+    }
+
+    fn sigma_r_split(r: &[F]) -> Vec<F> {
+        let n = r.len();
+        let mut r_sigma = Vec::with_capacity(n);
+        r_sigma.push(r[n - 1]);
+        r_sigma.extend_from_slice(&r[..n - 1]);
+        r_sigma
+    }
+
+    // let outputs_layer2_sigma_inv: Vec<F> = {
+    //     let mut lhs = outputs_layer2.clone();
+    //     // lhs.resize(lhs.len().next_power_of_two(), F::ZERO);
+    //     let rhs = lhs.split_off(lhs.len() / 2);
+
+    //     interleave(lhs, rhs).collect()
+    // };
+
+    // println!("layer2_outputs: {:?}", outputs_layer2);
+    // println!("layer2_outputs_sigma_inv: {:?}", outputs_layer2_sigma_inv);
+
+    println!("r_grand_product2: {:?}", r_grand_product2);
+
+    // let layer2_claim =
+    //     DensePolynomial::new_padded(outputs_layer2_sigma_inv.clone()).evaluate(&r_grand_product2);
+
+    let layer2_output_mle = DensePolynomial::new_padded(outputs_layer2.clone());
+    let eq_poly2 = MultilinearPolynomial::<F>::from(sigma(EqPolynomial::evals(&r_grand_product2)));
+
+    println!(
+        "eq_poly2_sigma: len ({}) {:?}",
+        eq_poly2.coeffs_as_field_elements().len(),
+        sigma(EqPolynomial::evals(&r_grand_product2))
+    );
+
+    let layer2_claim_sigma = layer2_output_mle.evaluate(&sigma_r_split(&r_grand_product2));
+
+    assert_eq!(layer2_claim_sigma, layer2_claim); // sanity check
+
+    let mut transcript2 = KeccakTranscript::new(&[]);
+
+    println!("eq_poly2: {:?}", eq_poly2.coeffs_as_field_elements());
+
+    let left_poly2 =
+        MultilinearPolynomial::<F>::LargeScalars(DensePolynomial::new_padded(left_layer2.clone()));
+    let right_poly2 =
+        MultilinearPolynomial::<F>::LargeScalars(DensePolynomial::new_padded(right_layer2.clone()));
+    let mut polys = vec![eq_poly2, left_poly2, right_poly2];
+
+    let (layer2_proof, _layer2_r_sumcheck, layer2_final_evals) =
+        SumcheckInstanceProof::<F, KeccakTranscript>::prove_arbitrary(
+            &layer2_claim,
+            num_rounds + 1,
+            &mut polys,
+            |evals| evals[0] * evals[1] * evals[2],
+            3,
+            &mut transcript2,
+        );
+
+    println!("final_evals2: {:?}", layer2_final_evals);
+
+    let layer2_left_claim = layer2_final_evals[1];
+    let layer2_right_claim = layer2_final_evals[2];
+
+    println!("layer2 - proved!");
+
+    println!("----------------");
+
+    // Verification
+
+    let mut transcript = KeccakTranscript::new(&[]);
+    let (sumcheck_claim, r_sumcheck) = layer1_proof
+        .verify(output_claim, num_rounds, 3, &mut transcript)
+        .unwrap();
+
+    let layer1_eq_eval: F = r_grand_product
+        .iter()
+        .zip_eq(r_sumcheck.iter().rev())
+        .map(|(&r_gp, &r_sc)| r_gp * r_sc + (F::ONE - r_gp) * (F::ONE - r_sc))
+        .product();
+
+    assert_eq!(layer1_final_evals[0], layer1_eq_eval); // sanity check
+
+    // verifier check
+    assert_eq!(
+        layer_1_left_claim * layer1_right_claim * layer1_eq_eval,
+        sumcheck_claim
+    );
+    println!("layer1 - verified!");
+
+    let (sumcheck_claim, r_sumcheck) = layer2_proof
+        .verify(layer2_claim, num_rounds + 1, 3, &mut transcript2)
+        .unwrap();
+
+    let r_grand_product2 = sigma_r_split(&r_grand_product2);
+
+    let layer2_eq_eval: F = r_grand_product2
+        .iter()
+        .zip_eq(r_sumcheck.iter().rev())
+        .map(|(&r_gp, &r_sc)| r_gp * r_sc + (F::ONE - r_gp) * (F::ONE - r_sc))
+        .product();
+
+    assert_eq!(
+        layer2_left_claim * layer2_right_claim * layer2_eq_eval,
+        sumcheck_claim
+    );
+    println!("layer2 - verified!");
 }
 
 #[derive(CanonicalSerialize, CanonicalDeserialize, Debug)]

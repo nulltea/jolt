@@ -30,27 +30,27 @@ use rayon::prelude::*;
 ///  / \    / \   / \    / \    –––––––––––––––––––––––––––––––––––––––––––
 /// 🏴  o  🏳️ o  🏳️ o  🏴  o    toggle layer        ↓
 #[derive(Debug)]
-struct BatchedGrandProductToggleLayer<F: JoltField> {
+pub struct BatchedGrandProductToggleLayer<F: JoltField> {
     /// The list of non-zero flag indices for each circuit in the batch.
-    flag_indices: Vec<Vec<usize>>,
+    pub flag_indices: Vec<Vec<usize>>,
     /// The list of non-zero flag values for each circuit in the batch.
     /// Before the first binding iteration of sumcheck, this will be empty
     /// (we know that all non-zero, unbound flag values are 1).
-    flag_values: Vec<Vec<F>>,
+    pub flag_values: Vec<Vec<F>>,
     /// The Reed-Solomon fingerprints for each circuit in the batch.
-    fingerprints: Vec<Vec<F>>,
+    pub fingerprints: Vec<Vec<F>>,
     /// Once the sparse flag/fingerprint vectors cannot be bound further
     /// (i.e. binding would require processing values in different vectors),
     /// we switch to using `coalesced_flags` to represent the flag values.
-    coalesced_flags: Option<Vec<F>>,
+    pub coalesced_flags: Option<Vec<F>>,
     /// Once the sparse flag/fingerprint vectors cannot be bound further
     /// (i.e. binding would require processing values in different vectors),
     /// we switch to using `coalesced_fingerprints` to represent the fingerprint values.
-    coalesced_fingerprints: Option<Vec<F>>,
+    pub coalesced_fingerprints: Option<Vec<F>>,
     /// The length of a layer in one of the circuits in the batch.
-    layer_len: usize,
+    pub layer_len: usize,
 
-    batched_layer_len: usize,
+    pub batched_layer_len: usize,
 }
 
 impl<F: JoltField> BatchedGrandProductToggleLayer<F> {

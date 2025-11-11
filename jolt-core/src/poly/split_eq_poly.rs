@@ -1,6 +1,6 @@
 //! Implements the Dao-Thaler optimization for EQ polynomial evaluations
 //! https://eprint.iacr.org/2024/1210.pdf
-#[cfg(test)]
+// #[cfg(test)]
 use super::dense_mlpoly::DensePolynomial;
 use crate::{field::JoltField, poly::eq_poly::EqPolynomial};
 
@@ -241,6 +241,33 @@ impl<F: JoltField> SplitEqPolynomial<F> {
         }
     }
 
+    pub fn new_chunk(w: &[F], log_chunks: usize, k: usize) -> Self {
+        let base = Self::new(w);
+        // println!("E2 poly base E1_len {} E2_len {}", base.E1_len, base.E2_len);
+        let n = 1usize << log_chunks;
+        let rows = base.E2_len;
+        let rows_per = (rows + n - 1) / n; // ceil
+        let i0 = core::cmp::min(k * rows_per, rows);
+        let i1 = core::cmp::min((k + 1) * rows_per, rows);
+        Self {
+            num_vars: w.len() - log_chunks,
+            E1: base.E1, // full inner axis
+            E1_len: base.E1_len,
+            E2: base.E2[i0..i1].to_vec(), // outer slab
+            E2_len: i1 - i0,
+        }
+    }
+
+    pub fn new_binded(E1: Vec<F>, E2: Vec<F>, num_vars: usize) -> Self {
+        Self {
+            num_vars,
+            E1_len: E1.len(),
+            E2_len: E2.len(),
+            E1,
+            E2,
+        }
+    }
+
     pub fn get_num_vars(&self) -> usize {
         self.num_vars
     }
@@ -280,7 +307,7 @@ impl<F: JoltField> SplitEqPolynomial<F> {
         }
     }
 
-    #[cfg(test)]
+    // #[cfg(test)]
     pub fn merge(&self) -> DensePolynomial<F> {
         if self.E1_len == 1 {
             DensePolynomial::new(self.E2[..self.E2_len].to_vec())

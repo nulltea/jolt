@@ -115,7 +115,7 @@ pub fn compute_dotproduct<F: JoltField>(a: &[F], b: &[F]) -> F {
 }
 
 /// Compute dotproduct optimized for values being 0 / 1
-#[tracing::instrument(skip_all)]
+#[tracing::instrument(skip_all, level = "trace")]
 pub fn compute_dotproduct_low_optimized<F: JoltField>(a: &[F], b: &[F]) -> F {
     a.par_iter()
         .zip_eq(b.par_iter())
