@@ -142,39 +142,13 @@ where
         let fixed_at_start = r_start.len();
 
         for (layer_index, layer_proof) in proof_layers.iter().enumerate() {
-            println!("layer {} claim {}", layer_index, claim);
-            let (sumcheck_claim, mut r_sumcheck) = Self::verify_sumcheck_temp(
-                &layer_proof.proof,
-                claim,
-                layer_index + fixed_at_start,
-                3,
-                transcript,
-            )
-            .unwrap();
-            println!("layer {} | r_sumcheck: {:?}", layer_index, r_sumcheck);
-            // println!(
-            //     "layer {} | r_grand_product: {:?}",
-            //     layer_index, r_grand_product
-            // );
+            let (sumcheck_claim, r_sumcheck) =
+                layer_proof.verify(claim, layer_index + fixed_at_start, 3, transcript);
+
             transcript.append_scalar(&layer_proof.left_claim);
             transcript.append_scalar(&layer_proof.right_claim);
 
-            // if layer_index == 1 {
-            //     let left: Vec<_> = r_grand_product.iter().copied().step_by(2).collect();
-            //     let right: Vec<_> = r_grand_product.iter().copied().skip(1).step_by(2).collect();
-
-            //     r_grand_product = [left, right].concat();
-            // }
-
-            let eq_eval: F = r_grand_product
-                .iter()
-                .zip_eq(r_sumcheck.iter().rev())
-                .map(|(&r_gp, &r_sc)| r_gp * r_sc + (F::one() - r_gp) * (F::one() - r_sc))
-                .product();
-
-            r_grand_product = r_sumcheck.into_iter().rev().collect();
-
-            if layer_index == 0 {
+            if layer_index == 1 {
                 let sigma_r_split = |r: &[F]| {
                     let n = r.len();
                     let mut r_sigma = Vec::with_capacity(n);
@@ -185,6 +159,14 @@ where
 
                 r_grand_product = sigma_r_split(&r_grand_product);
             }
+
+            let eq_eval: F = r_grand_product
+                .iter()
+                .zip_eq(r_sumcheck.iter().rev())
+                .map(|(&r_gp, &r_sc)| r_gp * r_sc + (F::one() - r_gp) * (F::one() - r_sc))
+                .product();
+
+            r_grand_product = r_sumcheck.into_iter().rev().collect();
 
             Self::verify_sumcheck_claim(
                 proof_layers,
@@ -200,39 +182,6 @@ where
         (claim, r_grand_product)
     }
 
-    fn verify_sumcheck_temp(
-        proof: &SumcheckInstanceProof<F, ProofTranscript>,
-        claim: F,
-        num_rounds: usize,
-        degree_bound: usize,
-        transcript: &mut ProofTranscript,
-    ) -> Result<(F, Vec<F>), ()> {
-        let mut e = claim;
-        let mut r: Vec<F> = Vec::new();
-
-        // verify that there is a univariate polynomial for each round
-        assert_eq!(proof.compressed_polys.len(), num_rounds);
-        for i in 0..proof.compressed_polys.len() {
-            // verify degree bound
-            if proof.compressed_polys[i].degree() != degree_bound {
-                return Err(());
-            }
-
-            // append the prover's message to the transcript
-            // self.compressed_polys[i].append_to_transcript(transcript);  // TODO: uncomment!!
-
-            //derive the verifier's challenge for the next round
-            let r_i = transcript.challenge_scalar();
-            r.push(r_i);
-
-            // evaluate the claimed degree-ell polynomial at r_i using the hint
-            e = proof.compressed_polys[i].eval_from_hint(&e, &r_i);
-            println!("verify sumcheck round e: {}", e);
-        }
-
-        Ok((e, r))
-    }
-
     /// Verifies the given grand product proof.
     fn verify_grand_product(
         proof: &BatchedGrandProductProof<PCS, ProofTranscript>,
@@ -243,7 +192,7 @@ where
     ) -> (F, Vec<F>) {
         // Evaluate the MLE of the output layer at a random point to reduce the outputs to
         // a single claim.
-        // transcript.append_scalars(claimed_outputs);
+        transcript.append_scalars(claimed_outputs);
         let r: Vec<F> =
             transcript.challenge_vector(claimed_outputs.len().next_power_of_two().log_2());
         let claim = DensePolynomial::new_padded(claimed_outputs.to_vec()).evaluate(&r);
@@ -291,49 +240,6 @@ where
 
         r_grand_product.push(r_layer);
 
-        let sigma_r_split = |r: &[F]| {
-            let n = r.len();
-            let mut r_sigma = Vec::with_capacity(n);
-            r_sigma.push(r[n - 1]);
-            r_sigma.extend_from_slice(&r[..n - 1]);
-            r_sigma
-        };
-
-        *r_grand_product = sigma_r_split(&r_grand_product);
-
-        // Permute r_sumcheck -> r_grand_product
-        // let sigma_r_split = |r: &[F]| {
-        //     let n = r.len();
-        //     let mut r_sigma = Vec::with_capacity(n);
-        //     r_sigma.push(r[n - 1]);
-        //     r_sigma.extend_from_slice(&r[..n - 1]);
-        //     r_sigma
-        // };
-
-        // let r_grand_product_ = r_grand_product.clone();
-        // *r_grand_product = sigma_r_split(r_grand_product);
-        // let sigma = |v: Vec<F>| {
-        //     let left: Vec<_> = v.iter().copied().step_by(2).collect();
-        //     let right: Vec<_> = v.iter().copied().skip(1).step_by(2).collect();
-
-        //     [left, right].concat()
-        // };
-
-        // assert_eq!(
-        //     [
-        //         SplitEqPolynomial::new_chunk(&r_grand_product, 1, 0)
-        //             .merge()
-        //             .Z,
-        //         SplitEqPolynomial::new_chunk(&r_grand_product, 1, 1)
-        //             .merge()
-        //             .Z
-        //     ]
-        //     .concat(),
-        //     sigma(EqPolynomial::evals(&r_grand_product_))
-        // );
-
-        // println!("r_grand_product permutation correct");
-
         BatchedGrandProductLayerProof {
             proof: sumcheck_proof,
             left_claim,
@@ -376,49 +282,9 @@ where
         let mut layers: Vec<DenseInterleavedPolynomial<F>> = Vec::with_capacity(num_layers);
         layers.push(DenseInterleavedPolynomial::new(leaves));
 
-        let previous_layer = &layers[0];
-
-        let coeffs = previous_layer.coeffs[..previous_layer.len()].to_vec();
-        tracing::info!(
-            "Remaining layer {} len {} dense: {:?}",
-            0,
-            previous_layer.len(),
-            &coeffs[..]
-                .into_iter()
-                // .enumerate()
-                // .filter(|(_, coeff)| **coeff != F::ONE)
-                // .take(10)
-                .collect::<Vec<_>>()
-        );
-
         for i in 0..num_layers - 1 {
             let previous_layer = &layers[i];
-
-            let coeffs = previous_layer.coeffs[..previous_layer.len()].to_vec();
-            println!(
-                "Remaining layer {} len {} dense_1: {:?}",
-                i,
-                previous_layer.len(),
-                &coeffs[..previous_layer.len() / 2]
-                    .into_iter()
-                    .enumerate()
-                    .filter(|(_, coeff)| **coeff != F::ONE)
-                    .take(10)
-                    .collect::<Vec<_>>()
-            );
-            println!(
-                "Remaining layer {} len {} dense_2: {:?}",
-                i,
-                previous_layer.len(),
-                &coeffs[previous_layer.len() / 2..]
-                    .into_iter()
-                    .enumerate()
-                    .filter(|(_, coeff)| **coeff != F::ONE)
-                    .take(10)
-                    .collect::<Vec<_>>()
-            );
-            let new_layer = previous_layer.layer_output();
-            layers.push(new_layer);
+            layers.push(previous_layer.layer_output());
         }
 
         Self { layers }
