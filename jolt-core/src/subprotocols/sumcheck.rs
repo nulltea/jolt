@@ -148,7 +148,8 @@ impl<F: JoltField, ProofTranscript: Transcript> SumcheckInstanceProof<F, ProofTr
             let mle_half = polys[0].len() / 2;
 
             let accum: Vec<Vec<F>> = (0..mle_half)
-                .into_par_iter()
+                // .into_par_iter()
+                .into_iter()
                 .map(|poly_term_i| {
                     let mut accum = vec![F::zero(); combined_degree];
                     // TODO(moodlezoup): Optimize
@@ -166,10 +167,10 @@ impl<F: JoltField, ProofTranscript: Transcript> SumcheckInstanceProof<F, ProofTr
                         let evals_j: Vec<_> = evals.iter().map(|x| x[j]).collect();
                         accum[j] += comb_func(&evals_j);
                     }
-                    // println!(
-                    //     "round: {} poly_term_i: {} evals: {:?}",
-                    //     _round, poly_term_i, evals
-                    // );
+                    println!(
+                        "round: {} poly_term_i: {} evals: {:?}",
+                        _round, poly_term_i, evals
+                    );
 
                     accum
                 })
@@ -188,8 +189,8 @@ impl<F: JoltField, ProofTranscript: Transcript> SumcheckInstanceProof<F, ProofTr
                         .sum::<F>();
                 });
 
-            // println!("eval points: {:?}", eval_points);
-            // println!("------");
+            println!("eval points: {:?}", eval_points);
+            println!("------");
 
             eval_points.insert(1, previous_claim - eval_points[0]);
             let univariate_poly = UniPoly::from_evals(&eval_points);
@@ -422,7 +423,7 @@ impl<F: JoltField, ProofTranscript: Transcript> SumcheckInstanceProof<F, ProofTr
     pub fn simulate_distibuted_prove_arbitrary<Func>(
         claim: &F,
         num_rounds: usize,
-        polys: &mut [&mut Vec<MultilinearPolynomial<F>>],
+        workers_polys: &mut [&mut Vec<MultilinearPolynomial<F>>],
         chunk_size_per_worker: usize,
         comb_func: Func,
         combined_degree: usize,
@@ -435,52 +436,47 @@ impl<F: JoltField, ProofTranscript: Transcript> SumcheckInstanceProof<F, ProofTr
         let mut r: Vec<F> = Vec::new();
         let mut compressed_polys: Vec<CompressedUniPoly<F>> = Vec::new();
 
-        // #[cfg(test)]
-        // {
-        //     let total_evals = 1 << num_rounds;
-        //     let mut sum = F::zero();
-        //     for i in 0..total_evals {
-        //         let params: Vec<F> = polys.iter().map(|poly| poly.get_coeff(i)).collect();
-        //         sum += comb_func(&params);
-        //     }
-        //     assert_eq!(&sum, claim, "Sumcheck claim is wrong");
-        // }
-
         fn custom_eq_sumcheck_evals<F: JoltField>(
             poly: &MultilinearPolynomial<F>,
-            mut index: usize,
+            index: usize,
             degree: usize,
             half_mle: usize,
             chunk_mle: usize,
             worker: usize,
         ) -> Vec<F> {
-            assert_ne!(chunk_mle, 1);
+            debug_assert!(worker < 2);
+            debug_assert_ne!(chunk_mle, 1);
 
-            let mle_by2 = (0..half_mle)
-                .chunks(chunk_mle / 2)
-                .into_iter()
-                .map(|chunk| chunk.collect::<Vec<_>>())
-                .collect::<Vec<_>>();
-            let (even, odd) = uninterleave(&mle_by2);
-            let mle_rewired = [even, odd][worker]
-                .iter()
-                .cloned()
-                .flatten()
-                .collect::<Vec<_>>();
-            // println!("worker {} mle: {:?}", worker, mle_);
-            index = mle_rewired[index];
+            // how many original indices live in one "half" chunk
+            let block_size = chunk_mle / 2;
+            debug_assert!(half_mle % block_size == 0);
 
-            let mut evals = vec![F::zero(); degree];
-            evals[0] = poly.get_bound_coeff(2 * index);
+            // local index → (local block, offset)
+            let local_block = index / block_size;
+            let offset = index % block_size;
+
+            // which global block this worker owns
+            let global_block = 2 * local_block + worker;
+            let global_index = global_block * block_size + offset;
+
+            // standard sumcheck_evals on that global index
+            let mut evals = Vec::with_capacity(degree);
+
+            let a0 = poly.get_bound_coeff(2 * global_index);
+            evals.push(a0);
+
             if degree == 1 {
                 return evals;
             }
-            let mut eval = poly.get_bound_coeff(2 * index + 1);
-            let m = eval - evals[0];
-            for i in 1..degree {
-                eval += m;
-                evals[i] = eval;
+
+            let mut v = poly.get_bound_coeff(2 * global_index + 1);
+            let step = v - a0;
+
+            for _ in 1..degree {
+                evals.push(v);
+                v += step;
             }
+
             evals
         }
 
@@ -488,16 +484,14 @@ impl<F: JoltField, ProofTranscript: Transcript> SumcheckInstanceProof<F, ProofTr
         let mut chunk_mle = chunk_size_per_worker;
 
         for _round in 0..chunk_nv {
-            // println!("round {}--------------", _round);
-
             // Vector storing evaluations of combined polynomials g(x) = P_0(x) * ... P_{num_polys} (x)
             // for points {0, ..., |g(x)|}
             let mut eval_points = vec![F::zero(); combined_degree];
 
-            let mle_half = polys[0][1].len() / 2;
+            let mle_half = workers_polys[0][1].len() / 2;
             let eq_poly_half_mle = mle_half * 2;
 
-            for (worker, polys) in polys.iter().enumerate() {
+            for (worker, polys) in workers_polys.iter().enumerate() {
                 if worker == 0 {
                     println!(
                         "round {} | left {:?} right {:?}",
@@ -507,7 +501,8 @@ impl<F: JoltField, ProofTranscript: Transcript> SumcheckInstanceProof<F, ProofTr
                     );
                 }
                 let accum: Vec<Vec<F>> = (0..mle_half)
-                    .into_par_iter()
+                    // .into_par_iter()
+                    .into_iter()
                     .map(|poly_term_i| {
                         let mut accum = vec![F::zero(); combined_degree];
 
@@ -532,19 +527,14 @@ impl<F: JoltField, ProofTranscript: Transcript> SumcheckInstanceProof<F, ProofTr
                                         BindingOrder::LowToHigh,
                                     )
                                 }
-                                // poly.sumcheck_evals(
-                                //     poly_term_i,
-                                //     combined_degree,
-                                //     BindingOrder::LowToHigh,
-                                // )
                             })
                             .collect();
-                        // println!(
-                        //     "round: {} poly_term_i: {} evals: {:?}",
-                        //     _round,
-                        //     poly_term_i + mle_half * worker,
-                        //     evals
-                        // );
+                        println!(
+                            "round: {} poly_term_i: {} evals: {:?}",
+                            _round,
+                            poly_term_i + mle_half * worker,
+                            evals
+                        );
                         for j in 0..combined_degree {
                             let evals_j: Vec<_> = evals.iter().map(|x| x[j]).collect();
                             accum[j] += comb_func(&evals_j);
@@ -566,14 +556,14 @@ impl<F: JoltField, ProofTranscript: Transcript> SumcheckInstanceProof<F, ProofTr
                             .map(|mle| mle[poly_i])
                             .sum::<F>();
                     });
-                // println!("------");
+                println!("------");
             }
 
             chunk_mle /= 2;
 
-            // println!("eval points: {:?}", eval_points);
+            println!("eval points: {:?}", eval_points);
 
-            // println!("--------------");
+            println!("--------------");
 
             eval_points.insert(1, previous_claim - eval_points[0]);
             let univariate_poly = UniPoly::from_evals(&eval_points);
@@ -583,7 +573,7 @@ impl<F: JoltField, ProofTranscript: Transcript> SumcheckInstanceProof<F, ProofTr
             let r_j = transcript.challenge_scalar();
             r.push(r_j);
 
-            for polys in polys.iter_mut() {
+            for polys in workers_polys.iter_mut() {
                 // bound all tables to the verifier's challenge
                 (*polys)
                     .par_iter_mut()
@@ -593,7 +583,7 @@ impl<F: JoltField, ProofTranscript: Transcript> SumcheckInstanceProof<F, ProofTr
             compressed_polys.push(compressed_poly);
         }
 
-        let final_evals: Vec<Vec<Vec<F>>> = polys
+        let final_evals: Vec<Vec<Vec<F>>> = workers_polys
             .iter()
             .map(|polys| {
                 polys
@@ -603,7 +593,7 @@ impl<F: JoltField, ProofTranscript: Transcript> SumcheckInstanceProof<F, ProofTr
             })
             .collect();
 
-        let mut polys: Vec<MultilinearPolynomial<F>> = (0..polys[0].len())
+        let mut polys: Vec<MultilinearPolynomial<F>> = (0..workers_polys[0].len())
             .map(|i| {
                 if i == 0 {
                     MultilinearPolynomial::from(final_evals[0][i].to_vec())
@@ -1638,10 +1628,10 @@ fn uninterleave_with_padding<F: JoltField>(v: &[F]) -> (Vec<F>, Vec<F>) {
     )
 }
 
-fn uninterleave<T: Clone>(v: &[T]) -> (Vec<T>, Vec<T>) {
+fn uninterleave<T: Clone + Send + Sync>(v: &[T]) -> (Vec<T>, Vec<T>) {
     (
-        v.iter().cloned().step_by(2).collect(),
-        v.iter().cloned().skip(1).step_by(2).collect(),
+        v.par_iter().cloned().step_by(2).collect(),
+        v.par_iter().cloned().skip(1).step_by(2).collect(),
     )
 }
 
