@@ -455,9 +455,6 @@ impl<F: JoltField, ProofTranscript: Transcript> SumcheckInstanceProof<F, ProofTr
             worker: usize,
         ) -> Vec<F> {
             assert_ne!(chunk_mle, 1);
-            // println!("worker {} mle: {:?}", worker, mle);
-
-            // let poly = MultilinearPolynomial::from(sigma(poly.coeffs_as_field_elements()));
 
             let mle_by2 = (0..half_mle)
                 .chunks(chunk_mle / 2)
@@ -465,13 +462,13 @@ impl<F: JoltField, ProofTranscript: Transcript> SumcheckInstanceProof<F, ProofTr
                 .map(|chunk| chunk.collect::<Vec<_>>())
                 .collect::<Vec<_>>();
             let (even, odd) = uninterleave(&mle_by2);
-            let mle_ = [even, odd][worker]
+            let mle_rewired = [even, odd][worker]
                 .iter()
                 .cloned()
                 .flatten()
                 .collect::<Vec<_>>();
             // println!("worker {} mle: {:?}", worker, mle_);
-            index = mle_[index];
+            index = mle_rewired[index];
 
             let mut evals = vec![F::zero(); degree];
             evals[0] = poly.get_bound_coeff(2 * index);
@@ -735,7 +732,7 @@ fn test_distributed_gkr_simulation() {
         N
     );
 
-    let leaves_len = (CHUNK_SIZE * N);
+    let leaves_len = CHUNK_SIZE * N;
     let num_layers = (leaves_len / N).log_2();
     println!("num_layers: {}", num_layers);
 
@@ -927,34 +924,13 @@ fn test_distributed_gkr_simulation() {
             prev_outputs_by_worker[1].clone(),
         ];
 
-        let prev_outputs = {
-            // println!("left chunks {:?} right chunks {:?}", l, r);
-
-            // let l_chunks_2 = l
-            //     .chunks(2)
-            //     .map(|c| c.into_iter().cloned().flatten().collect_vec())
-            //     .collect_vec();
-            // let r_chunks_2 = r
-            //     .chunks(2)
-            //     .map(|c| c.into_iter().cloned().flatten().collect_vec())
-            //     .collect_vec();
-            // println!(
-            //     "left chunks 2 {:?} right chunks 2 {:?}",
-            //     l_chunks_2, r_chunks_2
-            // );
-            // interleave(l_chunks_2, r_chunks_2)
-            //     .flatten()
-            //     .copied()
-            //     .collect::<Vec<_>>()
-
-            interleave(
-                prev_outputs_by_worker[0].chunks(2),
-                prev_outputs_by_worker[1].chunks(2),
-            )
-            .flatten()
-            .copied()
-            .collect_vec()
-        };
+        let prev_outputs = interleave(
+            prev_outputs_by_worker[0].chunks(2),
+            prev_outputs_by_worker[1].chunks(2),
+        )
+        .flatten()
+        .copied()
+        .collect_vec();
 
         println!(
             "worker layer {} | out perm: {:?}",
@@ -982,19 +958,19 @@ fn test_distributed_gkr_simulation() {
         let prev_layer = coordinator_layers.last().unwrap();
 
         // What coordinator receives from workers (sub hashes)
-        // let prev_outputs_by_worker = [
+        // let (left, right) = (
         //     izip!(&prev_layer.left[0], &prev_layer.right[0])
         //         .map(|(a, b)| a * b)
         //         .collect::<Vec<_>>(),
         //     izip!(&prev_layer.left[1], &prev_layer.right[1])
         //         .map(|(a, b)| a * b)
         //         .collect::<Vec<_>>(),
-        // ];
+        // );
 
         // println!(
-        //     "layer {} | out: {:?}",
+        //     "coordinator layer {} | out: {:?}",
         //     num_layers - 2,
-        //     prev_outputs_by_worker
+        //     [left.clone(), right.clone()]
         // );
 
         let prev_outputs = izip!(&prev_layer.left[0], &prev_layer.right[0])
@@ -1234,36 +1210,43 @@ fn test_distributed_gkr_simulation() {
 fn test_local_gkr_simulation() {
     type F = ark_bn254::Fr;
 
-    let K: u64 = env::var("K")
+    let CHUNK_SIZE: usize = env::var("CHUNK_SIZE")
         .unwrap_or_else(|_| "8".to_string())
         .parse()
         .unwrap();
-    let N = env::var("N")
+    let N: usize = env::var("BATCH_SIZE")
         .unwrap_or_else(|_| "4".to_string())
         .parse()
         .unwrap();
 
-    let K_worker = K / 2;
+    println!(
+        "CHUNK_SIZE={}/per_worker={}; BATCH_SIZE={}",
+        CHUNK_SIZE,
+        CHUNK_SIZE / 2,
+        N
+    );
 
-    println!("K: {} K_worker: {} N: {}", K, K_worker, N);
-
-    let leaves_len = (K * 2 * N) as usize;
-    let num_layers = (leaves_len / N as usize).log_2();
+    let leaves_len = CHUNK_SIZE * N;
+    let num_layers = (leaves_len / N).log_2();
     println!("num_layers: {}", num_layers);
 
-    let mut rng = ark_std::test_rng();
-    let mut in_left = (0u64..K).map(F::from).collect::<Vec<_>>();
-    let mut in_right = (K..K * 2).map(F::from).collect::<Vec<_>>();
+    let K = CHUNK_SIZE / 2;
+    let K_worker = K / 2;
 
-    for i in 1u64..N {
+    let mut in_left = vec![1; K].into_iter().map(F::from).collect::<Vec<_>>();
+    let mut in_right = vec![1; K].into_iter().map(F::from).collect::<Vec<_>>();
+
+    for i in 1..N {
         in_left.extend(
-            (0u64..K)
-                .map(|e| F::from(e) + F::from(i))
+            vec![1; K as usize]
+                .into_iter()
+                .map(|e| F::from(e) + F::from(i as u64))
                 .collect::<Vec<_>>(),
         );
         in_right.extend(
-            (K..K * 2)
-                .map(|e| F::from(e) + F::from(i))
+            vec![1; K as usize]
+                .into_iter()
+                .map(|e| F::from(e) + F::from(i as u64))
                 .collect::<Vec<_>>(),
         );
     }
