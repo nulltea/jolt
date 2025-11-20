@@ -138,18 +138,16 @@ impl<F: JoltField, ProofTranscript: Transcript> SumcheckInstanceProof<F, ProofTr
             // Vector storing evaluations of combined polynomials g(x) = P_0(x) * ... P_{num_polys} (x)
             // for points {0, ..., |g(x)|}
             println!(
-                "round {} | left: {} right: {}",
+                "round {} | left/right: {}",
                 _round,
                 polys[1].len(), // &polys[1].coeffs_as_field_elements()[..polys[1].len()]
-                polys[2].len()  // &polys[2].coeffs_as_field_elements()[..polys[2].len()]
             );
             let mut eval_points = vec![F::zero(); combined_degree];
 
             let mle_half = polys[0].len() / 2;
 
             let accum: Vec<Vec<F>> = (0..mle_half)
-                // .into_par_iter()
-                .into_iter()
+                .into_par_iter()
                 .map(|poly_term_i| {
                     let mut accum = vec![F::zero(); combined_degree];
                     // TODO(moodlezoup): Optimize
@@ -167,10 +165,10 @@ impl<F: JoltField, ProofTranscript: Transcript> SumcheckInstanceProof<F, ProofTr
                         let evals_j: Vec<_> = evals.iter().map(|x| x[j]).collect();
                         accum[j] += comb_func(&evals_j);
                     }
-                    println!(
-                        "round: {} poly_term_i: {} evals: {:?}",
-                        _round, poly_term_i, evals
-                    );
+                    // println!(
+                    //     "round: {} poly_term_i: {} evals: {:?}",
+                    //     _round, poly_term_i, evals
+                    // );
 
                     accum
                 })
@@ -189,8 +187,8 @@ impl<F: JoltField, ProofTranscript: Transcript> SumcheckInstanceProof<F, ProofTr
                         .sum::<F>();
                 });
 
-            println!("eval points: {:?}", eval_points);
-            println!("------");
+            // println!("eval points: {:?}", eval_points);
+            // println!("------");
 
             eval_points.insert(1, previous_claim - eval_points[0]);
             let univariate_poly = UniPoly::from_evals(&eval_points);
@@ -419,11 +417,11 @@ impl<F: JoltField, ProofTranscript: Transcript> SumcheckInstanceProof<F, ProofTr
             .reduce(|| (F::zero(), F::zero()), |a, b| (a.0 + b.0, a.1 + b.1))
     }
 
-    #[tracing::instrument(skip_all, name = "Sumcheck.prove", level = "trace")]
+    #[cfg(test)]
     pub fn simulate_distibuted_prove_arbitrary<Func>(
         claim: &F,
         num_rounds: usize,
-        workers_polys: &mut [&mut Vec<MultilinearPolynomial<F>>],
+        workers_polys: &mut [Vec<MultilinearPolynomial<F>>],
         chunk_size_per_worker: usize,
         comb_func: Func,
         combined_degree: usize,
@@ -436,29 +434,35 @@ impl<F: JoltField, ProofTranscript: Transcript> SumcheckInstanceProof<F, ProofTr
         let mut r: Vec<F> = Vec::new();
         let mut compressed_polys: Vec<CompressedUniPoly<F>> = Vec::new();
 
-        let chunk_nv = chunk_size_per_worker.log_2();
-        let mut chunk_mle = chunk_size_per_worker;
+        let num_workers = workers_polys.len();
+        let worker_rounds = chunk_size_per_worker.log_2(); // num variables of per worker chunk
 
-        for _round in 0..chunk_nv {
+        // Number of global EQ pairs covered across all workers this round:
+        // each worker covers chunk_size_per_worker entries = chunk_size_per_worker/2 EQ pairs, so total is (chunk_size_per_worker/2) * num_workers.
+        let mut global_eq_pairs = chunk_size_per_worker * num_workers / 2;
+
+        println!(
+            "worker rounds: {} (chunk_size_per_worker={} global_eq_pairs={})",
+            worker_rounds, chunk_size_per_worker, global_eq_pairs
+        );
+
+        for _round in 0..worker_rounds {
             // Vector storing evaluations of combined polynomials g(x) = P_0(x) * ... P_{num_polys} (x)
             // for points {0, ..., |g(x)|}
             let mut eval_points = vec![F::zero(); combined_degree];
 
             let mle_half = workers_polys[0][1].len() / 2;
-            let eq_poly_half_mle = mle_half * 2;
 
             for (worker, polys) in workers_polys.iter().enumerate() {
                 if worker == 0 {
                     println!(
-                        "round {} | left {:?} right {:?}",
+                        "round {} | left/right {:?}",
                         _round,
                         polys[1].len(), // &polys[1].coeffs_as_field_elements()[..polys[1].len()]
-                        polys[2].len()  // &polys[2].coeffs_as_field_elements()[..polys[2].len()]
                     );
                 }
                 let accum: Vec<Vec<F>> = (0..mle_half)
-                    // .into_par_iter()
-                    .into_iter()
+                    .into_par_iter()
                     .map(|poly_term_i| {
                         let mut accum = vec![F::zero(); combined_degree];
 
@@ -472,9 +476,9 @@ impl<F: JoltField, ProofTranscript: Transcript> SumcheckInstanceProof<F, ProofTr
                                         poly,
                                         poly_term_i,
                                         combined_degree,
-                                        eq_poly_half_mle,
-                                        chunk_mle,
+                                        global_eq_pairs,
                                         worker,
+                                        num_workers,
                                     )
                                 } else {
                                     poly.sumcheck_evals(
@@ -485,12 +489,12 @@ impl<F: JoltField, ProofTranscript: Transcript> SumcheckInstanceProof<F, ProofTr
                                 }
                             })
                             .collect();
-                        println!(
-                            "round: {} poly_term_i: {} evals: {:?}",
-                            _round,
-                            poly_term_i + mle_half * worker,
-                            evals
-                        );
+                        // println!(
+                        //     "round: {} poly_term_i: {} evals: {:?}",
+                        //     _round,
+                        //     poly_term_i + mle_half * worker,
+                        //     evals
+                        // );
                         for j in 0..combined_degree {
                             let evals_j: Vec<_> = evals.iter().map(|x| x[j]).collect();
                             accum[j] += comb_func(&evals_j);
@@ -512,14 +516,13 @@ impl<F: JoltField, ProofTranscript: Transcript> SumcheckInstanceProof<F, ProofTr
                             .map(|mle| mle[poly_i])
                             .sum::<F>();
                     });
-                println!("------");
+                // println!("------");
             }
 
-            chunk_mle /= 2;
+            global_eq_pairs /= 2;
 
-            println!("eval points: {:?}", eval_points);
-
-            println!("--------------");
+            // println!("eval points: {:?}", eval_points);
+            // println!("--------------");
 
             eval_points.insert(1, previous_claim - eval_points[0]);
             let univariate_poly = UniPoly::from_evals(&eval_points);
@@ -554,10 +557,11 @@ impl<F: JoltField, ProofTranscript: Transcript> SumcheckInstanceProof<F, ProofTr
                 if i == 0 {
                     MultilinearPolynomial::from(final_evals[0][i].to_vec())
                 } else {
-                    MultilinearPolynomial::from(
-                        interleave(final_evals[0][i].to_vec(), final_evals[1][i].to_vec())
-                            .collect::<Vec<_>>(),
-                    )
+                    MultilinearPolynomial::from(interleave_n(
+                        (0..num_workers)
+                            .map(|w| final_evals[w][i].to_vec())
+                            .collect_vec(),
+                    ))
                 }
             })
             .collect();
@@ -567,16 +571,15 @@ impl<F: JoltField, ProofTranscript: Transcript> SumcheckInstanceProof<F, ProofTr
         //     polys.iter().map(|p| p.len()).collect::<Vec<_>>()
         // );
 
-        let remaining_rounds = num_rounds - chunk_nv;
+        let remaining_rounds = num_rounds - worker_rounds;
 
         println!("remaining rounds: {}", remaining_rounds);
 
         for _round in 0..remaining_rounds {
             println!(
-                "rem round {} | left: {} right: {}",
+                "rem round {} | left/right: {}",
                 _round,
                 polys[1].len(), // &polys[1].coeffs_as_field_elements()[..polys[1].len()]
-                polys[2].len(), // &polys[2].coeffs_as_field_elements()[..polys[2].len()]
             );
 
             // Vector storing evaluations of combined polynomials g(x) = P_0(x) * ... P_{num_polys} (x)
@@ -657,48 +660,41 @@ impl<F: JoltField, ProofTranscript: Transcript> SumcheckInstanceProof<F, ProofTr
     }
 }
 
-/// Compute sumcheck evaluations for the equality polynomial in a distributed setting,
-/// using the same wiring as the local (non-distributed `prove_arbitrary) sumcheck.
+/// Compute sumcheck evaluations for the equality polynomial in a distributed setting
+/// with `W >= 2` workers (assume `W` is a power of two), using the same logical wiring
+/// as the local, non-distributed sumcheck.
 ///
-/// # Overview
+/// Conceptually, we do not reshuffle coefficient arrays. Instead, we view the global
+/// index space at this round (`0..EQ_HALF`) as split into contiguous blocks, and we
+/// stripe these blocks across workers round-robin. Each worker’s local index walks
+/// through its own striped view. This reproduces the exact pairs `(2i, 2i+1)` the local
+/// prover would multiply, but without materializing any intermediate vectors.
 ///
-/// In the standard (local) sumcheck for a multilinear polynomial `eq` over `n` variables,
-/// the first round on the lowest bit pairs coefficient indices `(2i, 2i+1)` for
-/// `i = 0..half_mle-1`, where:
+/// Mapping without allocation:
+/// - `BLOCK = CHUNK_PER_WORKER / W` (must divide evenly)
+/// - For a worker `w` and local index `i`, let `k = i / BLOCK` and `off = i % BLOCK`.
+/// - The corresponding global index is `g = (k*W + w)*BLOCK + off`.
 ///
-/// - `half_mle = eq.len() / 2` at that round.
-///
-/// When we distribute the computation across workers, we **do not** physically reshape
-/// the `eq` coefficients; instead, each worker gets a logical subset of indices,
-/// defined by a permutation of `0..half_mle`.
-///
-/// We built this mapping by:
-///
-/// 1. Splitting `0..half_mle` into chunks of size `chunk_mle/2`,
-/// 2. Inside each chunk, taking even/odd positions for worker 0/1 (`uninterleave`),
-/// 3. Flattening the result and indexing into that list.
-///
-/// This function reproduces that wiring arithmetically, without allocating intermediate
-/// vectors, and then calls the usual `sumcheck_evals` logic at the corresponding
-/// **global** index.
+/// We then perform the standard LowToHigh sumcheck evaluation at `g`:
+/// `evals[j] = P(2g + j)` for `j` on the univariate degree points.
 fn custom_eq_sumcheck_evals<F: JoltField>(
     poly: &MultilinearPolynomial<F>,
     index: usize,
     degree: usize,
-    _half_mle: usize,
-    chunk_mle: usize,
+    global_eq_pairs: usize,
     worker: usize,
+    num_workers: usize,
 ) -> Vec<F> {
-    debug_assert!(chunk_mle >= 2);
+    // println!("custom eq | chunk_mle: {} index {}", global_eq_pairs, index);
+    debug_assert!(num_workers >= 2 && num_workers.is_power_of_two());
+    debug_assert!(global_eq_pairs >= num_workers);
+    debug_assert_eq!(global_eq_pairs % num_workers, 0);
 
     // Compute the global index without allocating intermediate vectors.
-    // We partition 0..half_mle into blocks of size `block_size = chunk_mle/2`.
-    // Worker 0 takes even-numbered blocks, worker 1 takes odd-numbered blocks.
-    // Within each selected block, indices are taken in-order.
-    let block_size = chunk_mle >> 1; // chunk_mle / 2, guaranteed >= 1 by caller
+    let block_size = global_eq_pairs / num_workers;
     let k = index / block_size; // which block within the worker's sequence
     let offset = index % block_size; // position inside that block
-    let global_block = (k << 1) + worker; // 2*k + worker
+    let global_block = k * num_workers + worker;
     let global_index = global_block * block_size + offset;
 
     let mut evals = vec![F::zero(); degree];
@@ -715,49 +711,43 @@ fn custom_eq_sumcheck_evals<F: JoltField>(
     evals
 }
 
-#[test]
-fn test_distributed_gkr_simulation() {
-    type F = ark_bn254::Fr;
-
-    let CHUNK_SIZE: usize = env::var("CHUNK_SIZE")
-        .unwrap_or_else(|_| "8".to_string())
-        .parse()
-        .unwrap();
-    let N: usize = env::var("BATCH_SIZE")
-        .unwrap_or_else(|_| "4".to_string())
-        .parse()
-        .unwrap();
-
+#[cfg(test)]
+fn run_distributed_gkr_simulation<F: JoltField>(chunk_size: usize, N: usize, W: usize) {
+    assert!(
+        chunk_size.is_power_of_two(),
+        "chunk_size must be a power of two"
+    );
+    assert!(W.is_power_of_two(), "num_workers must be a power of two");
     println!(
-        "CHUNK_SIZE={}/per_worker={}; BATCH_SIZE={}",
-        CHUNK_SIZE,
-        CHUNK_SIZE / 2,
+        "NUM_WORKERS={} | CHUNK_SIZE={}={}/worker | BATCH_SIZE={}",
+        W,
+        chunk_size,
+        chunk_size / W,
         N
     );
 
-    let leaves_len = CHUNK_SIZE * N;
+    let W_log2 = W.log_2();
+    let leaves_len = chunk_size * N;
     let num_layers = (leaves_len / N).log_2();
     println!("num_layers: {}", num_layers);
 
-    let K = CHUNK_SIZE / 2;
-    let K_worker = K / 2;
+    let LR_SIZE = chunk_size / 2;
+    let LR_SIZE_worker = LR_SIZE / W;
 
-    let mut in_left = vec![1; K].into_iter().map(F::from).collect::<Vec<_>>();
-    let mut in_right = vec![1; K].into_iter().map(F::from).collect::<Vec<_>>();
+    assert!(LR_SIZE_worker > 1, "chunk_size must be greater than 2");
 
-    for i in 1..N {
-        in_left.extend(
-            vec![1; K as usize]
-                .into_iter()
-                .map(|e| F::from(e) + F::from(i as u64))
-                .collect::<Vec<_>>(),
-        );
-        in_right.extend(
-            vec![1; K as usize]
-                .into_iter()
-                .map(|e| F::from(e) + F::from(i as u64))
-                .collect::<Vec<_>>(),
-        );
+    let mut in_left = vec![1; LR_SIZE]
+        .into_iter()
+        .map(F::from)
+        .collect::<Vec<_>>();
+    let mut in_right = vec![1; LR_SIZE]
+        .into_iter()
+        .map(F::from)
+        .collect::<Vec<_>>();
+
+    for i in 2..N + 1 {
+        in_left.extend(vec![F::from(i as u64); LR_SIZE]);
+        in_right.extend(vec![F::from(i as u64); LR_SIZE]);
     }
     println!("left: {:?} right: {:?}", in_left, in_right);
 
@@ -777,54 +767,15 @@ fn test_distributed_gkr_simulation() {
 
     let mut input_layer = LayerCircuit {
         layer_idx: num_layers,
-        left: vec![
-            vec![1; K_worker]
-                .into_iter()
-                .map(F::from)
-                .collect::<Vec<_>>(),
-            vec![1; K_worker]
-                .into_iter()
-                .map(F::from)
-                .collect::<Vec<_>>(),
-        ],
-        right: vec![
-            vec![1; K_worker]
-                .into_iter()
-                .map(F::from)
-                .collect::<Vec<_>>(),
-            vec![1; K_worker]
-                .into_iter()
-                .map(F::from)
-                .collect::<Vec<_>>(),
-        ],
+        left: (0..W).map(|_| vec![F::from(1); LR_SIZE_worker]).collect(),
+        right: (0..W).map(|_| vec![F::from(1); LR_SIZE_worker]).collect(),
     };
 
-    for i in 1..N {
-        input_layer.left[0].extend(
-            vec![1; K_worker as usize]
-                .into_iter()
-                .map(|e| F::from(e) + F::from(i as u64))
-                .collect::<Vec<_>>(),
-        );
-        input_layer.left[1].extend(
-            vec![1; K_worker as usize]
-                .into_iter()
-                .map(|e| F::from(e) + F::from(i as u64))
-                .collect::<Vec<_>>(),
-        );
-
-        input_layer.right[0].extend(
-            vec![1; K_worker as usize]
-                .into_iter()
-                .map(|e| F::from(e) + F::from(i as u64))
-                .collect::<Vec<_>>(),
-        );
-        input_layer.right[1].extend(
-            vec![1; K_worker as usize]
-                .into_iter()
-                .map(|e| F::from(e) + F::from(i as u64))
-                .collect::<Vec<_>>(),
-        );
+    for i in 2..N + 1 {
+        for w in 0..W {
+            input_layer.left[w].extend(vec![F::from(i as u64); LR_SIZE_worker]);
+            input_layer.right[w].extend(vec![F::from(i as u64); LR_SIZE_worker]);
+        }
     }
 
     println!(
@@ -832,76 +783,85 @@ fn test_distributed_gkr_simulation() {
         input_layer.layer_idx, input_layer.left, input_layer.right
     );
 
-    let mut layers = vec![input_layer];
+    let worker_num_layers = num_layers - 2 - W_log2;
+    let mut worker_layers = vec![input_layer];
 
-    let distributed_layers = num_layers - 3;
-
-    for i in 0..distributed_layers {
-        let prev_layer = &layers[i];
+    for i in 0..worker_num_layers {
+        let prev_layer = &worker_layers[i];
         let layer_idx = num_layers - i - 1;
 
-        let outputs = [
-            izip!(&prev_layer.left[0], &prev_layer.right[0])
-                .map(|(a, b)| a * b)
-                .collect::<Vec<_>>(),
-            izip!(&prev_layer.left[1], &prev_layer.right[1])
-                .map(|(a, b)| a * b)
-                .collect::<Vec<_>>(),
-        ];
+        let outputs = (0..W)
+            .map(|w| {
+                izip!(&prev_layer.left[w], &prev_layer.right[w])
+                    .map(|(a, b)| *a * *b)
+                    .collect::<Vec<F>>()
+            })
+            .collect_vec();
         println!("worker layer {} | out: {:?}", num_layers - i, outputs);
         println!("-------------");
-        let (left0, right0) = uninterleave(&outputs[0]);
-        let (left1, right1) = uninterleave(&outputs[1]);
+        let (left, right): (Vec<_>, Vec<_>) = (0..W).map(|w| uninterleave(&outputs[w])).unzip();
+
+        // `MultilinearPolynomial::sumcheck_evals`'s the semantic pairing is (2i, 2i+1) in the coefficient array.
+        // Left/right polys must contain at least 2 elements from each chunk,
+        // otherwise `sumcheck_evals` would be pairing elements from unrelated chunks; breaking the distribution invariance.
+        // TODO: if you comment this assert, and set W_log2:=1 verification passes for W>2; need to investigate this.
+        assert!(
+            left[0].len() == right[0].len() && left[0].len() > N,
+            "Left/right polys must contain at least 2 elements from each chunk"
+        );
 
         let next_layer = LayerCircuit {
             layer_idx,
-            left: vec![left0, left1],
-            right: vec![right0, right1],
+            left,
+            right,
         };
 
         println!(
             "worker layer {} | left: {:?} right {:?}",
             layer_idx, next_layer.left, next_layer.right
         );
-        layers.push(next_layer);
+        worker_layers.push(next_layer);
     }
 
-    let mut coordinator_layers: Vec<LayerCircuit<F>> = vec![];
+    let coordinator_num_layers = W_log2 + 1;
+    let mut coordinator_layers: Vec<LayerCircuit<F>> = Vec::with_capacity(coordinator_num_layers);
 
     let mut switched = false;
-    for i in 0..2 {
-        let layer_idx = num_layers - distributed_layers - i - 1;
+    for i in 0..coordinator_num_layers {
+        let layer_idx = num_layers - worker_num_layers - i - 1;
 
         let prev_outputs = if !switched {
-            let prev_layer = layers.last().unwrap();
+            let prev_layer = worker_layers.last().unwrap();
 
             // What coordinator receives from workers (sub hashes)
-            let prev_outputs_by_worker = [
-                izip!(&prev_layer.left[0], &prev_layer.right[0])
-                    .map(|(a, b)| a * b)
-                    .collect::<Vec<_>>(),
-                izip!(&prev_layer.left[1], &prev_layer.right[1])
-                    .map(|(a, b)| a * b)
-                    .collect::<Vec<_>>(),
-            ];
+            let prev_outputs_by_worker = (0..W)
+                .map(|w| {
+                    izip!(&prev_layer.left[w], &prev_layer.right[w])
+                        .map(|(a, b)| *a * *b)
+                        .collect::<Vec<F>>()
+                })
+                .collect_vec();
 
             println!(
                 "worker layer {} | out: {:?}",
-                num_layers - distributed_layers,
+                num_layers - worker_num_layers,
                 prev_outputs_by_worker
             );
             println!("-------------");
 
-            let prev_outputs = interleave(
-                prev_outputs_by_worker[0].chunks(2),
-                prev_outputs_by_worker[1].chunks(2),
+            let prev_outputs = interleave_n(
+                (0..W)
+                    .into_iter()
+                    .map(|w| prev_outputs_by_worker[w].chunks(1).collect_vec())
+                    .collect::<Vec<_>>(),
             )
+            .into_par_iter()
             .flatten()
             .copied()
-            .collect_vec();
+            .collect::<Vec<_>>();
             println!(
-                "worker layer {} | out perm: {:?}",
-                num_layers - distributed_layers,
+                "worker layer {} | out restore order: {:?}",
+                num_layers - worker_num_layers,
                 prev_outputs
             );
             switched = true;
@@ -910,7 +870,7 @@ fn test_distributed_gkr_simulation() {
             let prev_layer = coordinator_layers.last().unwrap();
 
             let prev_outputs = izip!(&prev_layer.left[0], &prev_layer.right[0])
-                .map(|(a, b)| a * b)
+                .map(|(a, b)| *a * *b)
                 .collect::<Vec<_>>();
 
             println!(
@@ -940,7 +900,7 @@ fn test_distributed_gkr_simulation() {
         let last_layer = coordinator_layers.last().unwrap();
 
         izip!(&last_layer.left[0], &last_layer.right[0])
-            .map(|(a, b)| a * b)
+            .map(|(a, b)| *a * *b)
             .collect::<Vec<_>>()
     };
 
@@ -1004,28 +964,27 @@ fn test_distributed_gkr_simulation() {
     println!("\nWorker prover--------------");
 
     let mut chunk_size_per_worker = 2;
-    for layer in layers.into_iter().rev() {
+    for layer in worker_layers.into_iter().rev() {
         println!("layer {} rounds: {:?} -------", layer.layer_idx, num_rounds);
         println!("in_left: {:?}", layer.left);
         println!("in_right: {:?}", layer.right);
 
         let eq_poly = MultilinearPolynomial::<F>::from(EqPolynomial::evals(&r_grand_product));
 
-        let in_left0_poly = MultilinearPolynomial::<F>::LargeScalars(DensePolynomial::new_padded(
-            layer.left[0].clone(),
-        ));
-        let in_right0_poly = MultilinearPolynomial::<F>::LargeScalars(DensePolynomial::new_padded(
-            layer.right[0].clone(),
-        ));
-        let mut polys1 = vec![eq_poly.clone(), in_left0_poly, in_right0_poly];
-        let in_left1_poly = MultilinearPolynomial::<F>::LargeScalars(DensePolynomial::new_padded(
-            layer.left[1].clone(),
-        ));
-        let in_right1_poly = MultilinearPolynomial::<F>::LargeScalars(DensePolynomial::new_padded(
-            layer.right[1].clone(),
-        ));
-        let mut polys2 = vec![eq_poly, in_left1_poly, in_right1_poly];
-        let mut workers_polys = vec![&mut polys1, &mut polys2];
+        let mut workers_polys = (0..W)
+            .map(|w| {
+                vec![
+                    eq_poly.clone(),
+                    MultilinearPolynomial::<F>::LargeScalars(DensePolynomial::new_padded(
+                        layer.left[w].clone(),
+                    )),
+                    MultilinearPolynomial::<F>::LargeScalars(DensePolynomial::new_padded(
+                        layer.right[w].clone(),
+                    )),
+                ]
+            })
+            .collect_vec();
+
         let (proof, r_sumcheck, final_evals) =
             SumcheckInstanceProof::<F, KeccakTranscript>::simulate_distibuted_prove_arbitrary(
                 &running_claim,
@@ -1117,6 +1076,48 @@ fn test_distributed_gkr_simulation() {
     // );
     // assert_eq!(layer2_left_claim, in_left_eval);
     // assert_eq!(layer2_right_claim, in_right_eval);
+}
+
+#[test]
+fn test_distributed_gkr_simulation() {
+    let chunk_size: usize = env::var("CHUNK_SIZE")
+        .unwrap_or_else(|_| "8".to_string())
+        .parse()
+        .unwrap();
+    let N: usize = env::var("BATCH_SIZE")
+        .unwrap_or_else(|_| "4".to_string())
+        .parse()
+        .unwrap();
+    let W = env::var("NUM_WORKERS")
+        .unwrap_or_else(|_| "2".to_string())
+        .parse()
+        .unwrap();
+
+    run_distributed_gkr_simulation::<ark_bn254::Fr>(chunk_size, N, W);
+}
+
+#[test]
+fn test_cases_distributed_gkr_simulation() {
+    let W = env::var("NUM_WORKERS")
+        .unwrap_or_else(|_| "2".to_string())
+        .parse()
+        .unwrap();
+
+    let min_chunk_size = W * 4;
+
+    let cases = [
+        (min_chunk_size, 4),
+        (min_chunk_size, min_chunk_size),
+        (min_chunk_size, min_chunk_size * 2),
+        (min_chunk_size, 3),
+        (1 << 13, 102), // read_write
+        (1 << 16, 75),  // init_final
+    ];
+    for (chunk_size, N) in cases {
+        println!("/------------ Test case start ------------/");
+        run_distributed_gkr_simulation::<ark_bn254::Fr>(chunk_size, N, W);
+        println!("/-----------------------------------------/");
+    }
 }
 
 #[test]
@@ -1327,301 +1328,36 @@ fn test_local_gkr_simulation() {
     }
 }
 
-#[test]
-fn old_test_sumcheck_instance_proof() {
-    type F = ark_bn254::Fr;
-
-    let mut rng = ark_std::test_rng();
-    let mut in_left = (0u64..8).map(F::from).collect::<Vec<_>>();
-    let mut in_right = (8u64..16).map(F::from).collect::<Vec<_>>();
-
-    const N: u64 = 2;
-
-    for i in 1u64..N {
-        in_left.extend(
-            (0u64..8)
-                .map(|e| F::from(e) + F::from(i))
-                .collect::<Vec<_>>(),
-        );
-        in_right.extend(
-            (8u64..16)
-                .map(|e| F::from(e) + F::from(i))
-                .collect::<Vec<_>>(),
-        );
-    }
-    // // Normal scenario
-    // {
-    //     let layer2 = interleave(&in_left, &in_right).collect_vec();
-    //     println!("local layer2: {:?}", layer2);
-    //     let layer1 = layer2.chunks(2).map(|c| c[0] * c[1]).collect_vec();
-    //     println!("local layer1: {:?}", layer1);
-    //     let output = layer1.chunks(2).map(|c| c[0] * c[1]).collect_vec();
-    //     println!("local output: {:?}", output);
-    //     println!("----------------");
-    // }
-
-    let local_input_full = interleave(in_left.clone(), in_right.clone()).collect_vec();
-    println!("local input full: {:?}", local_input_full);
-    println!("layer2 left_: {:?} layer2 right_: {:?}", in_left, in_right);
-
-    // inputs hold by each worker - cannot be changed!
-    let (in_left0, in_left1) = uninterleave_with_padding(&in_left);
-    let (in_right0, in_right1) = uninterleave_with_padding(&in_right);
-
-    println!(
-        "layer2 left__: {:?} layer2 right__: {:?}",
-        [in_left0.clone(), in_left1.clone()],
-        [in_right0.clone(), in_right1.clone()]
-    );
-
-    // layer2 outputs from each worker - cannot be changed!
-    let layer1_coeffs = [
-        izip!(&in_left0, &in_right0)
-            .map(|(a, b)| a * b)
-            .collect::<Vec<_>>(),
-        izip!(&in_left1, &in_right1)
-            .map(|(a, b)| a * b)
-            .collect::<Vec<_>>(),
-    ];
-
-    println!("distributed layer1: {:?}", layer1_coeffs);
-
-    // aggregated layer2 outputs from workers - can be changed but final output must be same!
-    let layer1_sigma_coeffs =
-        interleave(layer1_coeffs[0].clone(), layer1_coeffs[1].clone()).collect_vec();
-
-    println!("aggregated (permuted) layer1: {:?}", layer1_sigma_coeffs);
-
-    let output_coeffs = layer1_sigma_coeffs
-        .chunks(2)
-        .map(|c| c[0] * c[1])
-        .collect_vec();
-    println!("aggregated output: {:?}", output_coeffs);
-
-    println!("----------------");
-
-    // let (left_layer2, right_layer2) = (
-    //     [in_left0.clone(), in_left1.clone()].concat(),
-    //     [in_right0.clone(), in_right1.clone()].concat(),
-    // );
-
-    // println!(
-    //     "layer2 left: {:?} layer2 right: {:?}",
-    //     left_layer2, right_layer2
-    // );
-    let outputs_layer2 = layer1_coeffs.concat();
-
-    // println!("outputs_layer2: {:?}", outputs_layer2);
-
-    //------ Layer 1 prover
-
-    // println!(
-    //     "layer1 left: {:?} layer1 right: {:?}",
-    //     layer1_coeffs[0], layer1_coeffs[1]
-    // );
-
-    let left_poly = MultilinearPolynomial::<F>::LargeScalars(DensePolynomial::new_padded(
-        layer1_coeffs[0].clone(),
-    ));
-    let right_poly = MultilinearPolynomial::<F>::LargeScalars(DensePolynomial::new_padded(
-        layer1_coeffs[1].clone(),
-    ));
-
-    let mut transcript = KeccakTranscript::new(&[]);
-
-    let output_mle = DensePolynomial::new_padded(output_coeffs.clone());
-    let r_grand_product: Vec<_> = (0..output_mle.get_num_vars())
-        .map(|_| F::rand(&mut rng))
-        .collect();
-    let eq_poly = MultilinearPolynomial::<F>::from(EqPolynomial::evals(&r_grand_product));
-    // println!("eq_poly: {:?}", eq_poly.coeffs_as_field_elements());
-    let output_claim = output_mle.evaluate(&r_grand_product);
-    let num_rounds = r_grand_product.len();
-    // println!("Layer1 rounds: {}", num_rounds);
-
-    let mut polys = vec![eq_poly, left_poly, right_poly];
-    let (layer1_proof, layer1_r_sumcheck, layer1_final_evals) =
-        SumcheckInstanceProof::<F, KeccakTranscript>::prove_arbitrary(
-            &output_claim,
-            num_rounds,
-            &mut polys,
-            |evals| evals[0] * evals[1] * evals[2],
-            3,
-            &mut transcript,
-        );
-
-    // println!("layer1_final_evals: {:?}", layer1_final_evals);
-
-    let layer_1_left_claim = layer1_final_evals[1];
-    let layer1_right_claim = layer1_final_evals[2];
-
-    let r_layer = F::rand(&mut rng);
-    let layer2_claim = layer_1_left_claim + r_layer * (layer1_right_claim - layer_1_left_claim);
-
-    // println!("layer2_claim: {:?}", layer2_claim);
-
-    let mut r_grand_product2: Vec<F> = layer1_r_sumcheck.iter().rev().copied().collect();
-    r_grand_product2.push(r_layer); // pass r_grand_product2 to next layer
-
-    // println!("layer1 - proved!");
-
-    //------ Layer 2 prover
-
-    println!("Layer2 rounds: {}", num_rounds + 1);
-
-    // println!("r_grand_product2: {:?}", r_grand_product2);
-
-    let layer2_output_mle = DensePolynomial::new_padded(outputs_layer2.clone());
-    // let eq_poly2 =
-    //     MultilinearPolynomial::<F>::from(EqPolynomial::evals(&sigma_r_split(&r_grand_product2)));
-
-    // println!("layer2_output_mle: {:?}", layer2_output_mle.Z);
-
-    // println!("eq_poly2: {:?}", eq_poly2.coeffs_as_field_elements());
-
-    {
-        println!("local sumcheck--------------");
-        let eq_poly2 = MultilinearPolynomial::<F>::from(EqPolynomial::evals(&r_grand_product2));
-        let mut transcript = transcript.clone();
-        let left_poly2 =
-            MultilinearPolynomial::<F>::LargeScalars(DensePolynomial::new_padded(in_left.clone()));
-        let right_poly2 =
-            MultilinearPolynomial::<F>::LargeScalars(DensePolynomial::new_padded(in_right.clone()));
-        let mut polys = vec![eq_poly2.clone(), left_poly2, right_poly2];
-
-        let (layer2_proof, layer2_r_sumcheck, layer2_final_evals) =
-            SumcheckInstanceProof::<F, KeccakTranscript>::prove_arbitrary(
-                &layer2_claim,
-                num_rounds + 1,
-                &mut polys,
-                |evals| evals[0] * evals[1] * evals[2],
-                3,
-                &mut transcript,
-            );
-        println!(
-            "check sumcheck done with final evals {:?}",
-            layer2_final_evals
-        );
-        println!("---------------------------");
+/// Interleave N vectors:
+/// [v0[0], v1[0], v2[0], ..., v0[1], v1[1], v2[1], ...]
+/// Works for ragged inputs (shorter inner vecs are just skipped).
+pub fn interleave_n<T>(v: Vec<impl IntoIterator<Item = T>>) -> Vec<T> {
+    if v.is_empty() {
+        return Vec::new();
     }
 
-    println!("distributed sumcheck--------------");
+    // Turn each inner Vec<T> into an iterator so we can move out of it.
+    let mut iters: Vec<_> = v.into_iter().map(|inner| inner.into_iter()).collect();
 
-    let mut in_left0 = (0u64..4).map(F::from).collect::<Vec<_>>();
-    let mut in_left1 = (4u64..8).map(F::from).collect::<Vec<_>>();
-    let mut in_right0 = (8u64..12).map(F::from).collect::<Vec<_>>();
-    let mut in_right1 = (12u64..16).map(F::from).collect::<Vec<_>>();
+    let total_len: usize = iters.iter().map(|it| it.size_hint().0).sum();
+    let mut out = Vec::with_capacity(total_len);
 
-    for i in 1u64..N {
-        in_left0.extend(
-            (0u64..4)
-                .map(|e| F::from(e) + F::from(i))
-                .collect::<Vec<_>>(),
-        );
-        in_left1.extend(
-            (4u64..8)
-                .map(|e| F::from(e) + F::from(i))
-                .collect::<Vec<_>>(),
-        );
+    loop {
+        let mut progressed = false;
 
-        in_right0.extend(
-            (8u64..12)
-                .map(|e| F::from(e) + F::from(i))
-                .collect::<Vec<_>>(),
-        );
-        in_right1.extend(
-            (12u64..16)
-                .map(|e| F::from(e) + F::from(i))
-                .collect::<Vec<_>>(),
-        );
+        for it in iters.iter_mut() {
+            if let Some(x) = it.next() {
+                out.push(x);
+                progressed = true;
+            }
+        }
+
+        if !progressed {
+            break;
+        }
     }
 
-    println!("in_left: {:?}", [in_left0.clone(), in_left1.clone()]);
-    println!("in_right: {:?}", [in_right0.clone(), in_right1.clone()]);
-    // let eq_evals = EqPolynomial::evals(&r_grand_product2);
-    let eq_poly2 = MultilinearPolynomial::<F>::from(EqPolynomial::evals(&r_grand_product2));
-
-    let in_left0_poly2 =
-        MultilinearPolynomial::<F>::LargeScalars(DensePolynomial::new_padded(in_left0.clone()));
-    let in_right0_poly2 =
-        MultilinearPolynomial::<F>::LargeScalars(DensePolynomial::new_padded(in_right0.clone()));
-    // let eq_poly2_0 = MultilinearPolynomial::<F>::from(eq_evals[0..eq_evals.len() / 2].to_vec());
-    let mut polys1 = vec![eq_poly2.clone(), in_left0_poly2, in_right0_poly2];
-    let in_left1_poly2 =
-        MultilinearPolynomial::<F>::LargeScalars(DensePolynomial::new_padded(in_left1.clone()));
-    let in_right1_poly2 =
-        MultilinearPolynomial::<F>::LargeScalars(DensePolynomial::new_padded(in_right1.clone()));
-    // let eq_poly2_1 = MultilinearPolynomial::<F>::from(eq_evals[eq_evals.len() / 2..].to_vec());
-    let mut polys2 = vec![eq_poly2, in_left1_poly2, in_right1_poly2];
-    let mut polys = vec![&mut polys1, &mut polys2];
-    let (layer2_proof, layer2_r_sumcheck, layer2_final_evals) =
-        SumcheckInstanceProof::<F, KeccakTranscript>::simulate_distibuted_prove_arbitrary(
-            &layer2_claim,
-            num_rounds + 1,
-            &mut polys,
-            4,
-            |evals| evals[0] * evals[1] * evals[2],
-            3,
-            &mut transcript,
-        );
-    println!("---------------------------");
-
-    let layer2_left_claim = layer2_final_evals[1];
-    let layer2_right_claim = layer2_final_evals[2];
-
-    let r_layer2 = F::rand(&mut rng);
-    let gkr_inputs_claim = layer2_left_claim + r_layer2 * (layer2_right_claim - layer2_left_claim);
-
-    println!("layer2_claim: {:?}", layer2_claim);
-
-    let mut r_grand_product_final: Vec<F> = layer2_r_sumcheck.iter().rev().copied().collect();
-    // r_grand_product_final.push(r_layer2); // pass r_grand_product2 to next layer
-
-    let r_grand_product_inputs = r_grand_product_final;
-
-    println!("----------------");
-
-    // Verification
-
-    let mut transcript = KeccakTranscript::new(&[]);
-    let (sumcheck_claim, r_sumcheck) = layer1_proof
-        .verify(output_claim, num_rounds, 3, &mut transcript)
-        .unwrap();
-
-    let layer1_eq_eval: F = r_grand_product
-        .iter()
-        .zip_eq(r_sumcheck.iter().rev())
-        .map(|(&r_gp, &r_sc)| r_gp * r_sc + (F::ONE - r_gp) * (F::ONE - r_sc))
-        .product();
-
-    assert_eq!(layer1_final_evals[0], layer1_eq_eval); // sanity check
-
-    // verifier check
-    assert_eq!(
-        layer_1_left_claim * layer1_right_claim * layer1_eq_eval,
-        sumcheck_claim
-    );
-    println!("layer1 - verified!");
-
-    let (sumcheck_claim, r_sumcheck) = layer2_proof
-        .verify(layer2_claim, num_rounds + 1, 3, &mut transcript)
-        .unwrap();
-
-    // let r_grand_product2 = sigma_r_split(&r_grand_product2);
-
-    let layer2_eq_eval: F = r_grand_product2
-        .iter()
-        .zip_eq(r_sumcheck.iter().rev())
-        .map(|(&r_gp, &r_sc)| r_gp * r_sc + (F::ONE - r_gp) * (F::ONE - r_sc))
-        .product();
-
-    assert_eq!(layer2_final_evals[0], layer2_eq_eval); // sanity check
-
-    assert_eq!(
-        layer2_left_claim * layer2_right_claim * layer2_eq_eval,
-        sumcheck_claim
-    );
-    println!("layer2 - verified!");
+    out
 }
 
 fn uninterleave_with_padding<F: JoltField>(v: &[F]) -> (Vec<F>, Vec<F>) {
