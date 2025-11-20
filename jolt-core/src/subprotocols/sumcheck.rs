@@ -719,24 +719,29 @@ impl<F: JoltField, ProofTranscript: Transcript> SumcheckInstanceProof<F, ProofTr
 fn test_distributed_gkr_simulation() {
     type F = ark_bn254::Fr;
 
-    let K: u64 = env::var("K")
+    let CHUNK_SIZE: u64 = env::var("CHUNK_SIZE")
         .unwrap_or_else(|_| "8".to_string())
         .parse()
         .unwrap();
-    let N = env::var("N")
+    let N: u64 = env::var("BATCH_SIZE")
         .unwrap_or_else(|_| "4".to_string())
         .parse()
         .unwrap();
 
-    let K_worker = K / 2;
+    println!(
+        "CHUNK_SIZE={}/per_worker={}; BATCH_SIZE={}",
+        CHUNK_SIZE,
+        CHUNK_SIZE / 2,
+        N
+    );
 
-    println!("K: {} K_worker: {} N: {}", K, K_worker, N);
-
-    let leaves_len = (K * 2 * N) as usize;
+    let leaves_len = (CHUNK_SIZE * N) as usize;
     let num_layers = (leaves_len / N as usize).log_2();
     println!("num_layers: {}", num_layers);
 
-    let mut rng = ark_std::test_rng();
+    let K: u64 = CHUNK_SIZE / 2;
+    let K_worker = K / 2;
+
     let mut in_left = (0u64..K).map(F::from).collect::<Vec<_>>();
     let mut in_right = (K..K * 2).map(F::from).collect::<Vec<_>>();
 
