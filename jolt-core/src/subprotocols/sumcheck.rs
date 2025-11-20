@@ -719,11 +719,11 @@ impl<F: JoltField, ProofTranscript: Transcript> SumcheckInstanceProof<F, ProofTr
 fn test_distributed_gkr_simulation() {
     type F = ark_bn254::Fr;
 
-    let CHUNK_SIZE: u64 = env::var("CHUNK_SIZE")
+    let CHUNK_SIZE: usize = env::var("CHUNK_SIZE")
         .unwrap_or_else(|_| "8".to_string())
         .parse()
         .unwrap();
-    let N: u64 = env::var("BATCH_SIZE")
+    let N: usize = env::var("BATCH_SIZE")
         .unwrap_or_else(|_| "4".to_string())
         .parse()
         .unwrap();
@@ -735,25 +735,27 @@ fn test_distributed_gkr_simulation() {
         N
     );
 
-    let leaves_len = (CHUNK_SIZE * N) as usize;
-    let num_layers = (leaves_len / N as usize).log_2();
+    let leaves_len = (CHUNK_SIZE * N);
+    let num_layers = (leaves_len / N).log_2();
     println!("num_layers: {}", num_layers);
 
-    let K: u64 = CHUNK_SIZE / 2;
+    let K = CHUNK_SIZE / 2;
     let K_worker = K / 2;
 
-    let mut in_left = (0u64..K).map(F::from).collect::<Vec<_>>();
-    let mut in_right = (K..K * 2).map(F::from).collect::<Vec<_>>();
+    let mut in_left = vec![1; K].into_iter().map(F::from).collect::<Vec<_>>();
+    let mut in_right = vec![1; K].into_iter().map(F::from).collect::<Vec<_>>();
 
-    for i in 1u64..N {
+    for i in 1..N {
         in_left.extend(
-            (0u64..K)
-                .map(|e| F::from(e) + F::from(i))
+            vec![1; K as usize]
+                .into_iter()
+                .map(|e| F::from(e) + F::from(i as u64))
                 .collect::<Vec<_>>(),
         );
         in_right.extend(
-            (K..K * 2)
-                .map(|e| F::from(e) + F::from(i))
+            vec![1; K as usize]
+                .into_iter()
+                .map(|e| F::from(e) + F::from(i as u64))
                 .collect::<Vec<_>>(),
         );
     }
@@ -801,14 +803,22 @@ fn test_distributed_gkr_simulation() {
     let mut input_layer = LayerCircuit {
         layer_idx: num_layers,
         left: vec![
-            (0u64..K_worker).map(F::from).collect::<Vec<_>>(),
-            (K_worker..K_worker * 2).map(F::from).collect::<Vec<_>>(),
-        ],
-        right: vec![
-            (K_worker * 2..K_worker * 3)
+            vec![1; K_worker]
+                .into_iter()
                 .map(F::from)
                 .collect::<Vec<_>>(),
-            (K_worker * 3..K_worker * 4)
+            vec![1; K_worker]
+                .into_iter()
+                .map(F::from)
+                .collect::<Vec<_>>(),
+        ],
+        right: vec![
+            vec![1; K_worker]
+                .into_iter()
+                .map(F::from)
+                .collect::<Vec<_>>(),
+            vec![1; K_worker]
+                .into_iter()
                 .map(F::from)
                 .collect::<Vec<_>>(),
         ],
@@ -819,26 +829,30 @@ fn test_distributed_gkr_simulation() {
     //     input_layer.left, input_layer.right
     // );
 
-    for i in 1u64..N {
+    for i in 1..N {
         input_layer.left[0].extend(
-            (0u64..K_worker)
-                .map(|e| F::from(e) + F::from(i))
+            vec![1; K_worker as usize]
+                .into_iter()
+                .map(|e| F::from(e) + F::from(i as u64))
                 .collect::<Vec<_>>(),
         );
         input_layer.left[1].extend(
-            (K_worker..K_worker * 2)
-                .map(|e| F::from(e) + F::from(i))
+            vec![1; K_worker as usize]
+                .into_iter()
+                .map(|e| F::from(e) + F::from(i as u64))
                 .collect::<Vec<_>>(),
         );
 
         input_layer.right[0].extend(
-            (K_worker * 2..K_worker * 3)
-                .map(|e| F::from(e) + F::from(i))
+            vec![1; K_worker as usize]
+                .into_iter()
+                .map(|e| F::from(e) + F::from(i as u64))
                 .collect::<Vec<_>>(),
         );
         input_layer.right[1].extend(
-            (K_worker * 3..K_worker * 4)
-                .map(|e| F::from(e) + F::from(i))
+            vec![1; K_worker as usize]
+                .into_iter()
+                .map(|e| F::from(e) + F::from(i as u64))
                 .collect::<Vec<_>>(),
         );
     }
@@ -908,32 +922,38 @@ fn test_distributed_gkr_simulation() {
         );
         println!("-------------");
 
-        let prev_outputs: Vec<_> = vec![
+        let prev_outputs_by_worker: Vec<_> = vec![
             prev_outputs_by_worker[0].clone(),
             prev_outputs_by_worker[1].clone(),
-        ]
-        .concat();
+        ];
 
         let prev_outputs = {
-            let (l, r) = uninterleave(&prev_outputs.chunks(2).collect_vec());
-            println!("left chunks {:?} right chunks {:?}", l, r);
+            // println!("left chunks {:?} right chunks {:?}", l, r);
 
-            let l_chunks_2 = l
-                .chunks(2)
-                .map(|c| c.into_iter().cloned().flatten().collect_vec())
-                .collect_vec();
-            let r_chunks_2 = r
-                .chunks(2)
-                .map(|c| c.into_iter().cloned().flatten().collect_vec())
-                .collect_vec();
-            println!(
-                "left chunks 2 {:?} right chunks 2 {:?}",
-                l_chunks_2, r_chunks_2
-            );
-            interleave(l_chunks_2, r_chunks_2)
-                .flatten()
-                .copied()
-                .collect::<Vec<_>>()
+            // let l_chunks_2 = l
+            //     .chunks(2)
+            //     .map(|c| c.into_iter().cloned().flatten().collect_vec())
+            //     .collect_vec();
+            // let r_chunks_2 = r
+            //     .chunks(2)
+            //     .map(|c| c.into_iter().cloned().flatten().collect_vec())
+            //     .collect_vec();
+            // println!(
+            //     "left chunks 2 {:?} right chunks 2 {:?}",
+            //     l_chunks_2, r_chunks_2
+            // );
+            // interleave(l_chunks_2, r_chunks_2)
+            //     .flatten()
+            //     .copied()
+            //     .collect::<Vec<_>>()
+
+            interleave(
+                prev_outputs_by_worker[0].chunks(2),
+                prev_outputs_by_worker[1].chunks(2),
+            )
+            .flatten()
+            .copied()
+            .collect_vec()
         };
 
         println!(
