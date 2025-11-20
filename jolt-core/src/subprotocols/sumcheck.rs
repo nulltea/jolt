@@ -436,50 +436,6 @@ impl<F: JoltField, ProofTranscript: Transcript> SumcheckInstanceProof<F, ProofTr
         let mut r: Vec<F> = Vec::new();
         let mut compressed_polys: Vec<CompressedUniPoly<F>> = Vec::new();
 
-        fn custom_eq_sumcheck_evals<F: JoltField>(
-            poly: &MultilinearPolynomial<F>,
-            index: usize,
-            degree: usize,
-            half_mle: usize,
-            chunk_mle: usize,
-            worker: usize,
-        ) -> Vec<F> {
-            debug_assert!(worker < 2);
-            debug_assert_ne!(chunk_mle, 1);
-
-            // how many original indices live in one "half" chunk
-            let block_size = chunk_mle / 2;
-            debug_assert!(half_mle % block_size == 0);
-
-            // local index → (local block, offset)
-            let local_block = index / block_size;
-            let offset = index % block_size;
-
-            // which global block this worker owns
-            let global_block = 2 * local_block + worker;
-            let global_index = global_block * block_size + offset;
-
-            // standard sumcheck_evals on that global index
-            let mut evals = Vec::with_capacity(degree);
-
-            let a0 = poly.get_bound_coeff(2 * global_index);
-            evals.push(a0);
-
-            if degree == 1 {
-                return evals;
-            }
-
-            let mut v = poly.get_bound_coeff(2 * global_index + 1);
-            let step = v - a0;
-
-            for _ in 1..degree {
-                evals.push(v);
-                v += step;
-            }
-
-            evals
-        }
-
         let chunk_nv = chunk_size_per_worker.log_2();
         let mut chunk_mle = chunk_size_per_worker;
 
@@ -699,6 +655,64 @@ impl<F: JoltField, ProofTranscript: Transcript> SumcheckInstanceProof<F, ProofTr
 
         (SumcheckInstanceProof::new(compressed_polys), r, final_evals)
     }
+}
+
+/// Compute sumcheck evaluations for the equality polynomial in a distributed setting,
+/// using the same wiring as the local (non-distributed `prove_arbitrary) sumcheck.
+///
+/// # Overview
+///
+/// In the standard (local) sumcheck for a multilinear polynomial `eq` over `n` variables,
+/// the first round on the lowest bit pairs coefficient indices `(2i, 2i+1)` for
+/// `i = 0..half_mle-1`, where:
+///
+/// - `half_mle = eq.len() / 2` at that round.
+///
+/// When we distribute the computation across workers, we **do not** physically reshape
+/// the `eq` coefficients; instead, each worker gets a logical subset of indices,
+/// defined by a permutation of `0..half_mle`.
+///
+/// We built this mapping by:
+///
+/// 1. Splitting `0..half_mle` into chunks of size `chunk_mle/2`,
+/// 2. Inside each chunk, taking even/odd positions for worker 0/1 (`uninterleave`),
+/// 3. Flattening the result and indexing into that list.
+///
+/// This function reproduces that wiring arithmetically, without allocating intermediate
+/// vectors, and then calls the usual `sumcheck_evals` logic at the corresponding
+/// **global** index.
+fn custom_eq_sumcheck_evals<F: JoltField>(
+    poly: &MultilinearPolynomial<F>,
+    index: usize,
+    degree: usize,
+    _half_mle: usize,
+    chunk_mle: usize,
+    worker: usize,
+) -> Vec<F> {
+    debug_assert!(chunk_mle >= 2);
+
+    // Compute the global index without allocating intermediate vectors.
+    // We partition 0..half_mle into blocks of size `block_size = chunk_mle/2`.
+    // Worker 0 takes even-numbered blocks, worker 1 takes odd-numbered blocks.
+    // Within each selected block, indices are taken in-order.
+    let block_size = chunk_mle >> 1; // chunk_mle / 2, guaranteed >= 1 by caller
+    let k = index / block_size; // which block within the worker's sequence
+    let offset = index % block_size; // position inside that block
+    let global_block = (k << 1) + worker; // 2*k + worker
+    let global_index = global_block * block_size + offset;
+
+    let mut evals = vec![F::zero(); degree];
+    evals[0] = poly.get_bound_coeff(2 * global_index);
+    if degree == 1 {
+        return evals;
+    }
+    let mut eval = poly.get_bound_coeff(2 * global_index + 1);
+    let m = eval - evals[0];
+    for i in 1..degree {
+        eval += m;
+        evals[i] = eval;
+    }
+    evals
 }
 
 #[test]
