@@ -449,75 +449,87 @@ impl<F: JoltField, ProofTranscript: Transcript> SumcheckInstanceProof<F, ProofTr
         for _round in 0..worker_rounds {
             // Vector storing evaluations of combined polynomials g(x) = P_0(x) * ... P_{num_polys} (x)
             // for points {0, ..., |g(x)|}
-            let mut eval_points = vec![F::zero(); combined_degree];
 
             let mle_half = workers_polys[0][1].len() / 2;
 
-            for (worker, polys) in workers_polys.iter().enumerate() {
-                if worker == 0 {
-                    println!(
-                        "round {} | left/right {:?}",
-                        _round,
-                        polys[1].len(), // &polys[1].coeffs_as_field_elements()[..polys[1].len()]
-                    );
-                }
-                let accum: Vec<Vec<F>> = (0..mle_half)
-                    .into_par_iter()
-                    .map(|poly_term_i| {
-                        let mut accum = vec![F::zero(); combined_degree];
+            let mut eval_points = workers_polys
+                .par_iter()
+                .enumerate()
+                .map(|(worker, polys)| {
+                    let mut eval_points = vec![F::zero(); combined_degree];
 
-                        // TODO(moodlezoup): Optimize
-                        let evals: Vec<_> = polys
-                            .iter()
-                            .enumerate()
-                            .map(|(poly_i, poly)| {
-                                if poly_i == 0 {
-                                    custom_eq_sumcheck_evals(
-                                        poly,
-                                        poly_term_i,
-                                        combined_degree,
-                                        global_eq_pairs,
-                                        worker,
-                                        num_workers,
-                                    )
-                                } else {
-                                    poly.sumcheck_evals(
-                                        poly_term_i,
-                                        combined_degree,
-                                        BindingOrder::LowToHigh,
-                                    )
-                                }
-                            })
-                            .collect();
-                        // println!(
-                        //     "round: {} poly_term_i: {} evals: {:?}",
-                        //     _round,
-                        //     poly_term_i + mle_half * worker,
-                        //     evals
-                        // );
-                        for j in 0..combined_degree {
-                            let evals_j: Vec<_> = evals.iter().map(|x| x[j]).collect();
-                            accum[j] += comb_func(&evals_j);
-                        }
+                    if worker == 0 {
+                        println!(
+                            "round {} | left/right {:?}",
+                            _round,
+                            polys[1].len(), // &polys[1].coeffs_as_field_elements()[..polys[1].len()]
+                        );
+                    }
+                    let accum: Vec<Vec<F>> = (0..mle_half)
+                        .into_par_iter()
+                        .map(|poly_term_i| {
+                            let mut accum = vec![F::zero(); combined_degree];
 
-                        accum
-                    })
-                    .collect();
+                            // TODO(moodlezoup): Optimize
+                            let evals: Vec<_> = polys
+                                .iter()
+                                .enumerate()
+                                .map(|(poly_i, poly)| {
+                                    if poly_i == 0 {
+                                        custom_eq_sumcheck_evals(
+                                            poly,
+                                            poly_term_i,
+                                            combined_degree,
+                                            global_eq_pairs,
+                                            worker,
+                                            num_workers,
+                                        )
+                                    } else {
+                                        poly.sumcheck_evals(
+                                            poly_term_i,
+                                            combined_degree,
+                                            BindingOrder::LowToHigh,
+                                        )
+                                    }
+                                })
+                                .collect();
+                            // println!(
+                            //     "round: {} poly_term_i: {} evals: {:?}",
+                            //     _round,
+                            //     poly_term_i + mle_half * worker,
+                            //     evals
+                            // );
+                            for j in 0..combined_degree {
+                                let evals_j: Vec<_> = evals.iter().map(|x| x[j]).collect();
+                                accum[j] += comb_func(&evals_j);
+                            }
 
-                // println!("accum: {:?}", accum);
+                            accum
+                        })
+                        .collect();
 
-                eval_points
-                    .par_iter_mut()
-                    .enumerate()
-                    .for_each(|(poly_i, eval_point)| {
-                        *eval_point += accum
-                            .par_iter()
-                            .take(mle_half)
-                            .map(|mle| mle[poly_i])
-                            .sum::<F>();
-                    });
-                // println!("------");
-            }
+                    // println!("accum: {:?}", accum);
+
+                    eval_points
+                        .par_iter_mut()
+                        .enumerate()
+                        .for_each(|(poly_i, eval_point)| {
+                            *eval_point += accum
+                                .par_iter()
+                                .take(mle_half)
+                                .map(|mle| mle[poly_i])
+                                .sum::<F>();
+                        });
+                    // println!("------");
+                    eval_points
+                })
+                .reduce(
+                    || vec![F::zero(); combined_degree],
+                    |mut eval_points, eval_points_next| {
+                        izip!(eval_points.iter_mut(), eval_points_next).for_each(|(a, b)| *a += b);
+                        eval_points
+                    },
+                );
 
             global_eq_pairs /= 2;
 
