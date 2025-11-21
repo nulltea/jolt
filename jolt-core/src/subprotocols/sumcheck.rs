@@ -877,6 +877,22 @@ fn run_distributed_gkr_simulation<F: JoltField>(chunk_size: usize, N: usize, W: 
     println!("\n/---------- Construct layers ----------/");
 
     // Each worker gets chunks of size `chunk_size/W`, left/right polys are half of that.
+    // THE ISSUE: if we combine worker chunks we'll have P_dgkr(X): [1..1, 2..2, 3..3, 1..1, 2..2, 3..3, ...]
+    // But in local GKR, P_gkr(X) is instead: [1,1,1..1, 2,2,2..2, 3,3,3..3,...]; this breaks distributed sumcheck/GKR invariance.
+    // Simple (naive) solutions:
+    // 1. We can distribute chunks
+    // - so worker chunks are P_w1: [1,1,1,...,1], P_w2: [2,2,2,...,2], P_w3: [3,3,3,...,3],...
+    // - or P_w1: [[1,1,1,...,1],[2,2,2,...,2],..], P_w2: [[X,X,X,...,X],[Y,Y,Y,...,Y], ...],...
+    // - this only works if each worker gets batch size which is *same* power of two, if `batch_size` is not power of two we cannot cleanly distribute
+    // 2. We can add custom eq_simga(x, r)
+    // - eq_simga(x, r)=eq(x, sigma(r, W)) implements custom wiring between worker layers and coordinor's final (output) layer
+    // - since sigma(r) depends on num workers W, this will make verifier depend on how prover distributes work (bad)
+    // - it also breaks openings checks
+    //
+    // New solution:
+    // 3. We keep same eq for bind(eq) but implements custom wiring in `custom_eq_sumcheck_evals` (part of compute round message poly)
+    // - Trade off is more complex orchestration when constructing and proving layers + extra communication between workers/coordinator.
+    // - The upside is that it keeps same eq for for verifier, works with openings check, and allows any power of two number of workers.
     let mut input_layer = LayerCircuit {
         layer_idx: num_layers,
         left: (0..W).map(|_| vec![F::from(1); LR_SIZE_worker]).collect(),
