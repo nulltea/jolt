@@ -134,14 +134,9 @@ impl<F: JoltField, ProofTranscript: Transcript> SumcheckInstanceProof<F, ProofTr
         }
 
         for _round in 0..num_rounds {
-            // println!("round {}--------------", _round);
             // Vector storing evaluations of combined polynomials g(x) = P_0(x) * ... P_{num_polys} (x)
             // for points {0, ..., |g(x)|}
-            println!(
-                "round {} | left/right: {}",
-                _round,
-                polys[1].len(), // &polys[1].coeffs_as_field_elements()[..polys[1].len()]
-            );
+
             let mut eval_points = vec![F::zero(); combined_degree];
 
             let mle_half = polys[0].len() / 2;
@@ -157,7 +152,7 @@ impl<F: JoltField, ProofTranscript: Transcript> SumcheckInstanceProof<F, ProofTr
                             poly.sumcheck_evals(
                                 poly_term_i,
                                 combined_degree,
-                                BindingOrder::LowToHigh,
+                                BindingOrder::HighToLow,
                             )
                         })
                         .collect();
@@ -165,16 +160,10 @@ impl<F: JoltField, ProofTranscript: Transcript> SumcheckInstanceProof<F, ProofTr
                         let evals_j: Vec<_> = evals.iter().map(|x| x[j]).collect();
                         accum[j] += comb_func(&evals_j);
                     }
-                    // println!(
-                    //     "round: {} poly_term_i: {} evals: {:?}",
-                    //     _round, poly_term_i, evals
-                    // );
 
                     accum
                 })
                 .collect();
-
-            // println!("accum: {:?}", accum);
 
             eval_points
                 .par_iter_mut()
@@ -187,9 +176,6 @@ impl<F: JoltField, ProofTranscript: Transcript> SumcheckInstanceProof<F, ProofTr
                         .sum::<F>();
                 });
 
-            // println!("eval points: {:?}", eval_points);
-            // println!("------");
-
             eval_points.insert(1, previous_claim - eval_points[0]);
             let univariate_poly = UniPoly::from_evals(&eval_points);
             let compressed_poly = univariate_poly.compress();
@@ -201,7 +187,7 @@ impl<F: JoltField, ProofTranscript: Transcript> SumcheckInstanceProof<F, ProofTr
             // bound all tables to the verifier's challenge
             polys
                 .par_iter_mut()
-                .for_each(|poly| poly.bind(r_j, BindingOrder::LowToHigh));
+                .for_each(|poly| poly.bind(r_j, BindingOrder::HighToLow));
             previous_claim = univariate_poly.evaluate(&r_j);
             compressed_polys.push(compressed_poly);
         }
@@ -417,6 +403,115 @@ impl<F: JoltField, ProofTranscript: Transcript> SumcheckInstanceProof<F, ProofTr
             .reduce(|| (F::zero(), F::zero()), |a, b| (a.0 + b.0, a.1 + b.1))
     }
 
+    /// prove_arbitrary ((LOW to HIGH))
+    #[cfg(test)]
+    pub fn prove_arbitrary_low_to_high<Func>(
+        claim: &F,
+        num_rounds: usize,
+        polys: &mut Vec<MultilinearPolynomial<F>>,
+        comb_func: Func,
+        combined_degree: usize,
+        transcript: &mut ProofTranscript,
+    ) -> (Self, Vec<F>, Vec<F>)
+    where
+        Func: Fn(&[F]) -> F + std::marker::Sync,
+    {
+        let mut previous_claim = *claim;
+        let mut r: Vec<F> = Vec::new();
+        let mut compressed_polys: Vec<CompressedUniPoly<F>> = Vec::new();
+
+        #[cfg(test)]
+        {
+            let total_evals = 1 << num_rounds;
+            let mut sum = F::zero();
+            for i in 0..total_evals {
+                let params: Vec<F> = polys.iter().map(|poly| poly.get_coeff(i)).collect();
+                sum += comb_func(&params);
+            }
+            assert_eq!(&sum, claim, "Sumcheck claim is wrong");
+        }
+
+        for _round in 0..num_rounds {
+            // println!("round {}--------------", _round);
+            // Vector storing evaluations of combined polynomials g(x) = P_0(x) * ... P_{num_polys} (x)
+            // for points {0, ..., |g(x)|}
+            println!(
+                "round {} | left/right: {}",
+                _round,
+                polys[1].len(), // &polys[1].coeffs_as_field_elements()[..polys[1].len()]
+            );
+            let mut eval_points = vec![F::zero(); combined_degree];
+
+            let mle_half = polys[0].len() / 2;
+
+            let accum: Vec<Vec<F>> = (0..mle_half)
+                .into_par_iter()
+                .map(|poly_term_i| {
+                    let mut accum = vec![F::zero(); combined_degree];
+                    // TODO(moodlezoup): Optimize
+                    let evals: Vec<_> = polys
+                        .iter()
+                        .map(|poly| {
+                            poly.sumcheck_evals(
+                                poly_term_i,
+                                combined_degree,
+                                BindingOrder::LowToHigh,
+                            )
+                        })
+                        .collect();
+                    for j in 0..combined_degree {
+                        let evals_j: Vec<_> = evals.iter().map(|x| x[j]).collect();
+                        accum[j] += comb_func(&evals_j);
+                    }
+                    // println!(
+                    //     "round: {} poly_term_i: {} evals: {:?}",
+                    //     _round, poly_term_i, evals
+                    // );
+
+                    accum
+                })
+                .collect();
+
+            // println!("accum: {:?}", accum);
+
+            eval_points
+                .par_iter_mut()
+                .enumerate()
+                .for_each(|(poly_i, eval_point)| {
+                    *eval_point = accum
+                        .par_iter()
+                        .take(mle_half)
+                        .map(|mle| mle[poly_i])
+                        .sum::<F>();
+                });
+
+            // println!("eval points: {:?}", eval_points);
+            // println!("------");
+
+            eval_points.insert(1, previous_claim - eval_points[0]);
+            let univariate_poly = UniPoly::from_evals(&eval_points);
+            let compressed_poly = univariate_poly.compress();
+            // append the prover's message to the transcript
+            compressed_poly.append_to_transcript(transcript);
+            let r_j = transcript.challenge_scalar();
+            r.push(r_j);
+
+            // bound all tables to the verifier's challenge
+            polys
+                .par_iter_mut()
+                .for_each(|poly| poly.bind(r_j, BindingOrder::LowToHigh));
+            previous_claim = univariate_poly.evaluate(&r_j);
+            compressed_polys.push(compressed_poly);
+        }
+
+        let final_evals = polys
+            .iter()
+            .map(|poly| poly.final_sumcheck_claim())
+            .collect();
+
+        (SumcheckInstanceProof::new(compressed_polys), r, final_evals)
+    }
+
     #[cfg(test)]
     pub fn simulate_distibuted_prove_arbitrary<Func>(
         claim: &F,
@@ -554,7 +649,7 @@ impl<F: JoltField, ProofTranscript: Transcript> SumcheckInstanceProof<F, ProofTr
             compressed_polys.push(compressed_poly);
         }
 
-        let final_evals: Vec<Vec<Vec<F>>> = workers_polys
+        let remaining_evals: Vec<Vec<Vec<F>>> = workers_polys
             .iter()
             .map(|polys| {
                 polys
@@ -567,11 +662,11 @@ impl<F: JoltField, ProofTranscript: Transcript> SumcheckInstanceProof<F, ProofTr
         let mut polys: Vec<MultilinearPolynomial<F>> = (0..workers_polys[0].len())
             .map(|i| {
                 if i == 0 {
-                    MultilinearPolynomial::from(final_evals[0][i].to_vec())
+                    MultilinearPolynomial::from(remaining_evals[0][i].to_vec())
                 } else {
                     MultilinearPolynomial::from(interleave_n(
                         (0..num_workers)
-                            .map(|w| final_evals[w][i].to_vec())
+                            .map(|w| remaining_evals[w][i].to_vec())
                             .collect_vec(),
                     ))
                 }
@@ -748,6 +843,9 @@ fn run_distributed_gkr_simulation<F: JoltField>(chunk_size: usize, N: usize, W: 
 
     assert!(LR_SIZE_worker > 1, "chunk_size must be greater than 2");
 
+    // Batch is as follows: [[1,1,1,...,1],[2,2,2,...,2],[3,3,3,...,3],...] each chunk has length `chunk_size`
+    // So left/right polys are L(x): [[1,...,1],[2,...,2],[3,...,3],...]; R(x): [[1,...,1],[2,...,2],[3,...,3],...] each chunk has length `chunk_size/2`
+    // The expected grand product results are thus [1^chunk_size, 2^chunk_size, 3^chunk_size, ...]
     let mut in_left = vec![1; LR_SIZE]
         .into_iter()
         .map(F::from)
@@ -763,6 +861,7 @@ fn run_distributed_gkr_simulation<F: JoltField>(chunk_size: usize, N: usize, W: 
     }
     println!("left: {:?} right: {:?}", in_left, in_right);
 
+    #[derive(Debug, Clone)]
     struct LayerCircuit<F: JoltField> {
         layer_idx: usize,
         left: Vec<Vec<F>>,
@@ -775,8 +874,9 @@ fn run_distributed_gkr_simulation<F: JoltField>(chunk_size: usize, N: usize, W: 
         right_claim: F,
     }
 
-    println!("\nConstruct layers----------------");
+    println!("\n/---------- Construct layers ----------/");
 
+    // Each worker gets chunks of size `chunk_size/W`, left/right polys are half of that.
     let mut input_layer = LayerCircuit {
         layer_idx: num_layers,
         left: (0..W).map(|_| vec![F::from(1); LR_SIZE_worker]).collect(),
@@ -835,6 +935,10 @@ fn run_distributed_gkr_simulation<F: JoltField>(chunk_size: usize, N: usize, W: 
         worker_layers.push(next_layer);
     }
 
+    // Next levels are constructed/run by coordinator.
+    // Alternatively, if we allow cross-worker communication, we can construct/run them by workers:
+    // - At each subsequent layer, we can have workers send their partial results to smaller subnet (half the size)
+    // - The proving is also done in this fashion.
     let coordinator_num_layers = W_log2 + 1;
     let mut coordinator_layers: Vec<LayerCircuit<F>> = Vec::with_capacity(coordinator_num_layers);
 
@@ -861,6 +965,9 @@ fn run_distributed_gkr_simulation<F: JoltField>(chunk_size: usize, N: usize, W: 
             );
             println!("-------------");
 
+            // We restore order of results like this:
+            // Worker results in our toy example: [[1, 4, 9, 16], [1, 4, 9, 16], ...]
+            // The restored order is: [1,..1, 4...4, 9...9, 16...16] (interleave_n)
             let prev_outputs = interleave_n(
                 (0..W)
                     .into_iter()
@@ -879,6 +986,7 @@ fn run_distributed_gkr_simulation<F: JoltField>(chunk_size: usize, N: usize, W: 
             switched = true;
             prev_outputs
         } else {
+            // After switch run normally
             let prev_layer = coordinator_layers.last().unwrap();
 
             let prev_outputs = izip!(&prev_layer.left[0], &prev_layer.right[0])
@@ -908,7 +1016,7 @@ fn run_distributed_gkr_simulation<F: JoltField>(chunk_size: usize, N: usize, W: 
         coordinator_layers.push(next_layer);
     }
 
-    let gkr_output = {
+    let grand_product_output = {
         let last_layer = coordinator_layers.last().unwrap();
 
         izip!(&last_layer.left[0], &last_layer.right[0])
@@ -916,19 +1024,21 @@ fn run_distributed_gkr_simulation<F: JoltField>(chunk_size: usize, N: usize, W: 
             .collect::<Vec<_>>()
     };
 
-    println!("gkr output {:?}", gkr_output);
+    println!("gkr output {:?}", grand_product_output);
 
-    println!("\nCoordinator prover----------------");
+    println!("\n/---------- Coordinator prover ----------/");
 
     //------ Output layer (N) prover
     let mut layer_proofs = vec![];
     let mut transcript = KeccakTranscript::new(&[]);
 
-    let output_mle = DensePolynomial::new_padded(gkr_output.clone());
+    let output_mle = DensePolynomial::new_padded(grand_product_output.clone());
     let mut num_rounds = output_mle.get_num_vars();
     let mut r_grand_product: Vec<_> = transcript.challenge_vector(num_rounds);
-    let mut running_claim = output_mle.evaluate(&r_grand_product);
+    // gkr output claim, will be updated as output claim of each subsequent layer as we progress to input layer
+    let mut grand_product_claim = output_mle.evaluate(&r_grand_product);
 
+    // GKR proves from output layer to input layer
     for layer in coordinator_layers.into_iter().rev() {
         println!("layer 1 rounds: {} -------", num_rounds);
 
@@ -943,8 +1053,8 @@ fn run_distributed_gkr_simulation<F: JoltField>(chunk_size: usize, N: usize, W: 
 
         let mut polys = vec![eq_poly, left_poly, right_poly];
         let (proof, r_sumcheck, final_evals) =
-            SumcheckInstanceProof::<F, KeccakTranscript>::prove_arbitrary(
-                &running_claim,
+            SumcheckInstanceProof::<F, KeccakTranscript>::prove_arbitrary_low_to_high(
+                &grand_product_claim,
                 num_rounds,
                 &mut polys,
                 |evals| evals[0] * evals[1] * evals[2],
@@ -962,9 +1072,9 @@ fn run_distributed_gkr_simulation<F: JoltField>(chunk_size: usize, N: usize, W: 
         });
 
         let r_layer = transcript.challenge_scalar();
-        running_claim = left_claim + r_layer * (right_claim - left_claim);
+        grand_product_claim = left_claim + r_layer * (right_claim - left_claim);
 
-        println!("layer {} claim: {:?}", layer.layer_idx, running_claim);
+        println!("layer {} claim: {:?}", layer.layer_idx, grand_product_claim);
 
         r_grand_product = r_sumcheck.iter().rev().copied().collect();
         r_grand_product.push(r_layer); // pass r_grand_product to next layer
@@ -973,10 +1083,10 @@ fn run_distributed_gkr_simulation<F: JoltField>(chunk_size: usize, N: usize, W: 
 
     //------ Distributed layers prover
 
-    println!("\nWorker prover--------------");
+    println!("\n/------------ Worker prover ------------/");
 
     let mut chunk_size_per_worker = 2;
-    for layer in worker_layers.into_iter().rev() {
+    for layer in worker_layers.iter().cloned().rev() {
         println!("layer {} rounds: {:?} -------", layer.layer_idx, num_rounds);
         println!("in_left: {:?}", layer.left);
         println!("in_right: {:?}", layer.right);
@@ -999,7 +1109,7 @@ fn run_distributed_gkr_simulation<F: JoltField>(chunk_size: usize, N: usize, W: 
 
         let (proof, r_sumcheck, final_evals) =
             SumcheckInstanceProof::<F, KeccakTranscript>::simulate_distibuted_prove_arbitrary(
-                &running_claim,
+                &grand_product_claim,
                 num_rounds,
                 &mut workers_polys,
                 chunk_size_per_worker,
@@ -1017,9 +1127,9 @@ fn run_distributed_gkr_simulation<F: JoltField>(chunk_size: usize, N: usize, W: 
         });
 
         let r_layer = transcript.challenge_scalar();
-        running_claim = left_claim + r_layer * (right_claim - left_claim);
+        grand_product_claim = left_claim + r_layer * (right_claim - left_claim);
 
-        println!("layer {} claim: {:?}", layer.layer_idx, running_claim);
+        println!("layer {} claim: {:?}", layer.layer_idx, grand_product_claim);
 
         r_grand_product = r_sumcheck.iter().rev().copied().collect();
         r_grand_product.push(r_layer); // pass r_grand_product2 to next layer
@@ -1028,17 +1138,67 @@ fn run_distributed_gkr_simulation<F: JoltField>(chunk_size: usize, N: usize, W: 
         println!("-------------");
     }
 
+    // Compute openings
+    println!("\n/---------- Compute openings ----------/");
+
+    let chunk_size_worker = chunk_size / W;
+    let (_, r_opening) =
+        r_grand_product.split_at(grand_product_output.len().next_power_of_two().log_2());
+    let (r_opening_worker, r_opening_remaining) =
+        r_opening.split_at(chunk_size_worker.next_power_of_two().log_2());
+    println!(
+        "r_grand_product {:?} r_opening {:?} r_opening_worker {:?} r_opening_remaining {:?}",
+        r_grand_product.len(),
+        r_opening.len(),
+        r_opening_worker.len(),
+        r_opening_remaining.len()
+    );
+
+    let partial_openings: Vec<_> = izip!(
+        worker_layers[0].left.clone(),
+        worker_layers[0].right.clone()
+    )
+    .map(|(w_left, w_right)| {
+        let w_opennings = izip!(
+            w_left.chunks(LR_SIZE_worker),
+            w_right.chunks(LR_SIZE_worker)
+        )
+        .map(|(l_chunk, r_chunk)| {
+            let w_chunk = interleave(l_chunk.to_vec(), r_chunk.to_vec()).collect_vec();
+            assert_eq!(w_chunk.len(), chunk_size_worker);
+            MultilinearPolynomial::from(w_chunk).evaluate(&r_opening_worker)
+        })
+        .collect_vec();
+        assert_eq!(w_opennings.len(), N);
+        w_opennings
+    })
+    .fold(vec![vec![]; N], |mut chunks, evals| {
+        izip!(chunks.iter_mut(), evals).for_each(|(a, b)| a.push(b));
+        chunks
+    });
+
+    let prover_openings = partial_openings
+        .into_iter()
+        .map(|evals| MultilinearPolynomial::from(evals).evaluate(&r_opening_remaining))
+        .collect_vec();
+
+    assert_eq!(prover_openings.len(), N);
+
     // Verification
+    println!("\n/----------- Verification -----------/");
 
     let mut transcript = KeccakTranscript::new(&[]);
+    assert_eq!(grand_product_output.len(), N);
+    let output_mle = DensePolynomial::new_padded(grand_product_output.clone());
     let mut num_rounds = output_mle.get_num_vars();
     let mut r_grand_product: Vec<_> = transcript.challenge_vector(num_rounds);
-    let mut running_claim = output_mle.evaluate(&r_grand_product);
+    let mut grand_product_claim = output_mle.evaluate(&r_grand_product);
 
     for (i, layer_proof) in layer_proofs.iter().enumerate() {
+        // layer sumcheck verification
         let (sumcheck_claim, r_sumcheck) = layer_proof
             .proof
-            .verify(running_claim, num_rounds, 3, &mut transcript)
+            .verify(grand_product_claim, num_rounds, 3, &mut transcript)
             .unwrap();
 
         let eq_eval: F = r_grand_product
@@ -1055,39 +1215,298 @@ fn run_distributed_gkr_simulation<F: JoltField>(chunk_size: usize, N: usize, W: 
         println!("layer {} - verified!", i + 1);
 
         let r_layer = transcript.challenge_scalar();
-        running_claim =
+        grand_product_claim =
             layer_proof.left_claim + r_layer * (layer_proof.right_claim - layer_proof.left_claim);
-        println!("layer {} - claim: {}", i + 1, running_claim);
+        println!("layer {} - claim: {}", i + 1, grand_product_claim);
+
+        r_grand_product = r_sumcheck.iter().rev().copied().collect();
+        r_grand_product.push(r_layer); // pass updated r_grand_product to next layer
+        num_rounds += 1;
+    }
+
+    // Verify openings
+
+    // For a batch size of k, the first log2(k) elements of `r_grand_product`
+    // form the point at which the output layer's MLE is evaluated. The remaining elements
+    // then form the point at which the leaf layer's polynomials are evaluated.
+    let (r_batch_index, r_opening) =
+        r_grand_product.split_at(grand_product_output.len().next_power_of_two().log_2());
+
+    assert_eq!(
+        grand_product_output.len().next_power_of_two(),
+        r_batch_index.len().pow2(),
+    );
+
+    // `r_batch_index` is used to combine the k claims in the batch into a single claim.
+    let combined_output_claim: F = prover_openings
+        .iter()
+        .zip(EqPolynomial::evals(r_batch_index).iter())
+        .map(|(hash, eq_eval)| *hash * eq_eval)
+        .sum();
+
+    assert_eq!(combined_output_claim, grand_product_claim);
+    println!("fingerprint check - verified!");
+
+    // Verifier recomputes openings to simulate PCS openings verification
+    izip!(
+        in_left.chunks(LR_SIZE),
+        in_right.chunks(LR_SIZE),
+        prover_openings
+    )
+    .for_each(|(l_coeffs, r_coeffs, prover_opening)| {
+        let coeffs = interleave(l_coeffs.to_vec(), r_coeffs.to_vec()).collect_vec();
+        assert_eq!(coeffs.len(), chunk_size);
+        let verifier_opening = MultilinearPolynomial::from(coeffs).evaluate(&r_opening);
+        assert_eq!(verifier_opening, prover_opening);
+    });
+    println!("PCS.open(r_opening, commitments) == openings - verified!");
+}
+
+#[test]
+fn test_local_gkr_simulation() {
+    type F = ark_bn254::Fr;
+
+    let chunk_size: usize = env::var("CHUNK_SIZE")
+        .unwrap_or_else(|_| "8".to_string())
+        .parse()
+        .unwrap();
+    let N: usize = env::var("BATCH_SIZE")
+        .unwrap_or_else(|_| "4".to_string())
+        .parse()
+        .unwrap();
+
+    println!(
+        "CHUNK_SIZE={}/per_worker={}; BATCH_SIZE={}",
+        chunk_size,
+        chunk_size / 2,
+        N
+    );
+
+    let leaves_len = chunk_size * N;
+    let num_layers = (leaves_len / N).log_2();
+    println!("num_layers: {}", num_layers);
+
+    let LR_SIZE = chunk_size / 2;
+
+    let mut in_left = vec![1; LR_SIZE]
+        .into_iter()
+        .map(F::from)
+        .collect::<Vec<_>>();
+    let mut in_right = vec![1; LR_SIZE]
+        .into_iter()
+        .map(F::from)
+        .collect::<Vec<_>>();
+
+    for i in 2..N + 1 {
+        in_left.extend(vec![F::from(i as u64); LR_SIZE]);
+        in_right.extend(vec![F::from(i as u64); LR_SIZE]);
+    }
+    println!("left: {:?} right: {:?}", in_left, in_right);
+
+    struct LayerCircuit<F: JoltField> {
+        layer_idx: usize,
+        left: Vec<Vec<F>>,
+        right: Vec<Vec<F>>,
+    }
+
+    struct LayerProof<F: JoltField> {
+        proof: SumcheckInstanceProof<F, KeccakTranscript>,
+        left_claim: F,
+        right_claim: F,
+    }
+
+    println!("\n/----------- Construct layers -----------/");
+
+    let input_layer = LayerCircuit {
+        layer_idx: num_layers,
+        left: vec![in_left.clone()],
+        right: vec![in_right.clone()],
+    };
+
+    println!(
+        "input layer | left: {:?} right: {:?}",
+        input_layer.left, input_layer.right
+    );
+
+    let mut layers = vec![input_layer];
+
+    for i in 0..num_layers - 1 {
+        let prev_layer = &layers[i];
+        let prev_outputs = izip!(&prev_layer.left[0], &prev_layer.right[0])
+            .map(|(a, b)| a * b)
+            .collect::<Vec<_>>();
+
+        println!(
+            "layer {} | prev_outputs: {:?}",
+            num_layers - i - 1,
+            prev_outputs
+        );
+
+        let layer_idx = num_layers - i - 1;
+
+        let (left, right) = uninterleave(&prev_outputs);
+
+        let next_layer = LayerCircuit {
+            layer_idx,
+            left: vec![left],
+            right: vec![right],
+        };
+
+        println!(
+            "layer {} | left: {:?} right {:?}",
+            layer_idx, next_layer.left, next_layer.right
+        );
+        layers.push(next_layer);
+    }
+
+    let last_layer = layers.last().unwrap();
+    let grand_product_output = izip!(last_layer.left[0].clone(), last_layer.right[0].clone())
+        .map(|(left, right)| left * right)
+        .collect::<Vec<_>>();
+
+    println!("gkr output {:?}", grand_product_output);
+
+    println!("\n/----------- Local prover -----------/");
+
+    //------ Output layer (N) prover
+    let mut layer_proofs = vec![];
+    let mut transcript = KeccakTranscript::new(&[]);
+
+    let output_mle = DensePolynomial::new_padded(grand_product_output.clone());
+    let mut num_rounds = output_mle.get_num_vars();
+    let mut r_grand_product: Vec<_> = transcript.challenge_vector(num_rounds);
+    let mut grand_product_claim = output_mle.evaluate(&r_grand_product);
+
+    for layer in layers.into_iter().rev() {
+        println!("layer {} rounds: {:?}-------", layer.layer_idx, num_rounds);
+        println!("in_left: {:?}", layer.left);
+        println!("in_right: {:?}", layer.right);
+        println!("r_grand_product: {:?}", r_grand_product);
+
+        let left_poly = MultilinearPolynomial::<F>::LargeScalars(DensePolynomial::new_padded(
+            layer.left[0].clone(),
+        ));
+        let right_poly = MultilinearPolynomial::<F>::LargeScalars(DensePolynomial::new_padded(
+            layer.right[0].clone(),
+        ));
+
+        let eq_poly = MultilinearPolynomial::<F>::from(EqPolynomial::evals(&r_grand_product));
+
+        let mut polys = vec![eq_poly, left_poly, right_poly];
+        let (proof, r_sumcheck, final_evals) =
+            SumcheckInstanceProof::<F, KeccakTranscript>::prove_arbitrary_low_to_high(
+                &grand_product_claim,
+                num_rounds,
+                &mut polys,
+                |evals| evals[0] * evals[1] * evals[2],
+                3,
+                &mut transcript,
+            );
+
+        let left_claim = final_evals[1];
+        let right_claim = final_evals[2];
+
+        layer_proofs.push(LayerProof {
+            proof,
+            left_claim,
+            right_claim,
+        });
+
+        let r_layer = transcript.challenge_scalar();
+        grand_product_claim = left_claim + r_layer * (right_claim - left_claim);
+
+        println!("layer {} claim: {:?}", layer.layer_idx, grand_product_claim);
+
+        r_grand_product = r_sumcheck.iter().rev().copied().collect();
+        r_grand_product.push(r_layer); // pass r_grand_product to next layer
+        num_rounds += 1;
+    }
+
+    // Compute openings
+    let (_, r_opening) =
+        r_grand_product.split_at(grand_product_output.len().next_power_of_two().log_2());
+
+    let prover_openings = izip!(in_left.chunks(LR_SIZE), in_right.chunks(LR_SIZE))
+        .map(|(l_coeffs, r_coeffs)| {
+            let coeffs = interleave(l_coeffs.to_vec(), r_coeffs.to_vec()).collect_vec();
+            assert_eq!(coeffs.len(), chunk_size);
+            MultilinearPolynomial::from(coeffs).evaluate(&r_opening)
+        })
+        .collect::<Vec<_>>();
+
+    // Verification
+    println!("\n/----------- Verification -----------/");
+
+    let mut transcript = KeccakTranscript::new(&[]);
+    assert_eq!(grand_product_output.len(), N);
+    let output_mle = DensePolynomial::new_padded(grand_product_output.clone());
+    let mut num_rounds = output_mle.get_num_vars();
+    let mut r_grand_product: Vec<_> = transcript.challenge_vector(num_rounds);
+    let mut grand_product_claim = output_mle.evaluate(&r_grand_product);
+
+    for (i, layer_proof) in layer_proofs.iter().enumerate() {
+        let (sumcheck_claim, r_sumcheck) = layer_proof
+            .proof
+            .verify(grand_product_claim, num_rounds, 3, &mut transcript)
+            .unwrap();
+
+        let eq_eval: F = r_grand_product
+            .iter()
+            .zip_eq(r_sumcheck.iter().rev())
+            .map(|(&r_gp, &r_sc)| r_gp * r_sc + (F::ONE - r_gp) * (F::ONE - r_sc))
+            .product();
+
+        // cross-layer consistency check
+        assert_eq!(
+            layer_proof.left_claim * layer_proof.right_claim * eq_eval,
+            sumcheck_claim
+        );
+        println!("layer {} - verified!", i + 1);
+
+        let r_layer = transcript.challenge_scalar();
+        grand_product_claim =
+            layer_proof.left_claim + r_layer * (layer_proof.right_claim - layer_proof.left_claim);
+        println!("layer {} - claim: {}", i + 1, grand_product_claim);
 
         r_grand_product = r_sumcheck.iter().rev().copied().collect();
         r_grand_product.push(r_layer); // pass r_grand_product2 to next layer
         num_rounds += 1;
     }
 
-    // Opennings
+    // Verify openings
 
-    // println!("r_grand_product_inputs: {:?}", r_grand_product_inputs.len());
-    // println!("in_left: {:?} in_right: {:?}", in_left, in_right);
+    // For a batch size of k, the first log2(k) elements of `r_grand_product`
+    // form the point at which the output layer's MLE is evaluated. The remaining elements
+    // then form the point at which the leaf layer's polynomials are evaluated.
+    let (r_batch_index, r_opening) =
+        r_grand_product.split_at(grand_product_output.len().next_power_of_two().log_2());
 
-    // let in_left_poly = DensePolynomial::new_padded(in_left);
-    // let in_right_poly = DensePolynomial::new_padded(in_right);
+    assert_eq!(
+        grand_product_output.len().next_power_of_two(),
+        r_batch_index.len().pow2(),
+    );
 
-    // let in_left_eval = in_left_poly.evaluate(&sigma_r_split(&r_grand_product_inputs));
-    // let in_right_eval = in_right_poly.evaluate(&sigma_r_split(&r_grand_product_inputs));
+    // `r_batch_index` is used to combine the k claims in the batch into a single claim.
+    let combined_output_claim: F = prover_openings
+        .iter()
+        .zip(EqPolynomial::evals(r_batch_index).iter())
+        .map(|(hash, eq_eval)| *hash * eq_eval)
+        .sum();
 
-    // println!("in_left_eval: {:?}", in_left_eval);
-    // println!("in_right_eval: {:?}", in_right_eval);
+    assert_eq!(combined_output_claim, grand_product_claim);
 
-    // assert_eq!(
-    //     layer2_left_claim,
-    //     DensePolynomial::new_padded(left_layer2).evaluate(&r_grand_product_inputs)
-    // );
-    // assert_eq!(
-    //     layer2_right_claim,
-    //     DensePolynomial::new_padded(right_layer2).evaluate(&r_grand_product_inputs)
-    // );
-    // assert_eq!(layer2_left_claim, in_left_eval);
-    // assert_eq!(layer2_right_claim, in_right_eval);
+    // Verifier recomputes openings to simulate PCS openings verification
+    izip!(
+        in_left.chunks(LR_SIZE),
+        in_right.chunks(LR_SIZE),
+        prover_openings
+    )
+    .for_each(|(l_coeffs, r_coeffs, prover_opening)| {
+        let coeffs = interleave(l_coeffs.to_vec(), r_coeffs.to_vec()).collect_vec();
+        assert_eq!(coeffs.len(), chunk_size);
+        let verifier_opening = MultilinearPolynomial::from(coeffs).evaluate(&r_opening);
+        assert_eq!(verifier_opening, prover_opening);
+    });
 }
 
 #[test]
@@ -1129,214 +1548,6 @@ fn test_cases_distributed_gkr_simulation() {
         println!("/------------ Test case start ------------/");
         run_distributed_gkr_simulation::<ark_bn254::Fr>(chunk_size, N, W);
         println!("/-----------------------------------------/");
-    }
-}
-
-#[test]
-fn test_local_gkr_simulation() {
-    type F = ark_bn254::Fr;
-
-    let CHUNK_SIZE: usize = env::var("CHUNK_SIZE")
-        .unwrap_or_else(|_| "8".to_string())
-        .parse()
-        .unwrap();
-    let N: usize = env::var("BATCH_SIZE")
-        .unwrap_or_else(|_| "4".to_string())
-        .parse()
-        .unwrap();
-
-    println!(
-        "CHUNK_SIZE={}/per_worker={}; BATCH_SIZE={}",
-        CHUNK_SIZE,
-        CHUNK_SIZE / 2,
-        N
-    );
-
-    let leaves_len = CHUNK_SIZE * N;
-    let num_layers = (leaves_len / N).log_2();
-    println!("num_layers: {}", num_layers);
-
-    let K = CHUNK_SIZE / 2;
-
-    let mut in_left = vec![1; K].into_iter().map(F::from).collect::<Vec<_>>();
-    let mut in_right = vec![1; K].into_iter().map(F::from).collect::<Vec<_>>();
-
-    for i in 1..N {
-        in_left.extend(
-            vec![1; K as usize]
-                .into_iter()
-                .map(|e| F::from(e) + F::from(i as u64))
-                .collect::<Vec<_>>(),
-        );
-        in_right.extend(
-            vec![1; K as usize]
-                .into_iter()
-                .map(|e| F::from(e) + F::from(i as u64))
-                .collect::<Vec<_>>(),
-        );
-    }
-    println!("left: {:?} right: {:?}", in_left, in_right);
-
-    struct LayerCircuit<F: JoltField> {
-        layer_idx: usize,
-        left: Vec<Vec<F>>,
-        right: Vec<Vec<F>>,
-    }
-
-    struct LayerProof<F: JoltField> {
-        proof: SumcheckInstanceProof<F, KeccakTranscript>,
-        left_claim: F,
-        right_claim: F,
-    }
-
-    println!("\nConstruct layers----------------");
-
-    let mut input_layer = LayerCircuit {
-        layer_idx: num_layers,
-        left: vec![in_left],
-        right: vec![in_right],
-    };
-
-    println!(
-        "input layer | left: {:?} right: {:?}",
-        input_layer.left, input_layer.right
-    );
-
-    let mut layers = vec![input_layer];
-
-    // let num_layers = 2;
-
-    for i in 0..num_layers - 1 {
-        let prev_layer = &layers[i];
-        let prev_outputs = izip!(&prev_layer.left[0], &prev_layer.right[0])
-            .map(|(a, b)| a * b)
-            .collect::<Vec<_>>();
-
-        println!(
-            "layer {} | prev_outputs: {:?}",
-            num_layers - i - 1,
-            prev_outputs
-        );
-
-        let layer_idx = num_layers - i - 1;
-
-        // println!("pre_last_outputs (sigma): {:?}", pre_last_outputs);
-
-        let (left, right) = uninterleave(&prev_outputs);
-
-        let next_layer = LayerCircuit {
-            layer_idx,
-            left: vec![left],
-            right: vec![right],
-        };
-
-        println!(
-            "layer {} | left: {:?} right {:?}",
-            layer_idx, next_layer.left, next_layer.right
-        );
-        layers.push(next_layer);
-    }
-
-    let last_layer = layers.last().unwrap();
-    let gkr_output = izip!(last_layer.left[0].clone(), last_layer.right[0].clone())
-        .map(|(left, right)| left * right)
-        .collect::<Vec<_>>();
-
-    println!("gkr output {:?}", gkr_output);
-
-    println!("\n Prover----------------");
-
-    //------ Output layer (N) prover
-    let mut layer_proofs = vec![];
-    let mut transcript = KeccakTranscript::new(&[]);
-
-    let output_mle = DensePolynomial::new_padded(gkr_output.clone());
-    let mut num_rounds = output_mle.get_num_vars();
-    let mut r_grand_product: Vec<_> = transcript.challenge_vector(num_rounds);
-    let mut running_claim = output_mle.evaluate(&r_grand_product);
-
-    for layer in layers.into_iter().rev() {
-        println!("layer {} rounds: {:?}-------", layer.layer_idx, num_rounds);
-        println!("in_left: {:?}", layer.left);
-        println!("in_right: {:?}", layer.right);
-        println!("r_grand_product: {:?}", r_grand_product);
-
-        let left_poly = MultilinearPolynomial::<F>::LargeScalars(DensePolynomial::new_padded(
-            layer.left[0].clone(),
-        ));
-        let right_poly = MultilinearPolynomial::<F>::LargeScalars(DensePolynomial::new_padded(
-            layer.right[0].clone(),
-        ));
-
-        let eq_poly = MultilinearPolynomial::<F>::from(EqPolynomial::evals(&r_grand_product));
-
-        let mut polys = vec![eq_poly, left_poly, right_poly];
-        let (proof, r_sumcheck, final_evals) =
-            SumcheckInstanceProof::<F, KeccakTranscript>::prove_arbitrary(
-                &running_claim,
-                num_rounds,
-                &mut polys,
-                |evals| evals[0] * evals[1] * evals[2],
-                3,
-                &mut transcript,
-            );
-
-        let left_claim = final_evals[1];
-        let right_claim = final_evals[2];
-
-        layer_proofs.push(LayerProof {
-            proof,
-            left_claim,
-            right_claim,
-        });
-
-        let r_layer = transcript.challenge_scalar();
-        running_claim = left_claim + r_layer * (right_claim - left_claim);
-
-        println!("layer {} claim: {:?}", layer.layer_idx, running_claim);
-
-        r_grand_product = r_sumcheck.iter().rev().copied().collect();
-        r_grand_product.push(r_layer); // pass r_grand_product to next layer
-        num_rounds += 1;
-    }
-
-    // Verification
-
-    let mut transcript = KeccakTranscript::new(&[]);
-    let mut num_rounds = output_mle.get_num_vars();
-    let mut r_grand_product: Vec<_> = transcript.challenge_vector(num_rounds);
-    let mut running_claim = output_mle.evaluate(&r_grand_product);
-
-    for (i, layer_proof) in layer_proofs.iter().enumerate() {
-        let (sumcheck_claim, r_sumcheck) = layer_proof
-            .proof
-            .verify(running_claim, num_rounds, 3, &mut transcript)
-            .unwrap();
-
-        let eq_eval: F = r_grand_product
-            .iter()
-            .zip_eq(r_sumcheck.iter().rev())
-            .map(|(&r_gp, &r_sc)| r_gp * r_sc + (F::ONE - r_gp) * (F::ONE - r_sc))
-            .product();
-
-        println!("eq_eval check {}", eq_eval);
-
-        // assert_eq!(layer1_final_evals[0], layer1_eq_eval); // sanity check
-
-        // verifier check
-        assert_eq!(
-            layer_proof.left_claim * layer_proof.right_claim * eq_eval,
-            sumcheck_claim
-        );
-        println!("layer {} - verified!", i + 1);
-
-        let r_layer = transcript.challenge_scalar();
-        running_claim =
-            layer_proof.left_claim + r_layer * (layer_proof.right_claim - layer_proof.left_claim);
-
-        r_grand_product = r_sumcheck.iter().rev().copied().collect();
-        r_grand_product.push(r_layer); // pass r_grand_product2 to next layer
-        num_rounds += 1;
     }
 }
 
