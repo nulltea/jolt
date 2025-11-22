@@ -227,17 +227,26 @@ impl<F: JoltField> GruenSplitEqPolynomial<F> {
 impl<F: JoltField> SplitEqPolynomial<F> {
     #[tracing::instrument(skip_all, name = "SplitEqPolynomial::new", level = "trace")]
     pub fn new(w: &[F]) -> Self {
-        let m = w.len() / 2;
-        let (w2, w1) = w.split_at(m);
-        let (E2, E1) = rayon::join(|| EqPolynomial::evals(w2), || EqPolynomial::evals(w1));
-        let E1_len = E1.len();
-        let E2_len = E2.len();
+        // let m = w.len() / 2;
+        // let (w2, w1) = w.split_at(m);
+        // let (E2, E1) = rayon::join(|| EqPolynomial::evals(w2), || EqPolynomial::evals(w1));
+        // let E1_len = E1.len();
+        // let E2_len = E2.len();
+        // Self {
+        //     num_vars: w.len(),
+        //     E1,
+        //     E1_len,
+        //     E2,
+        //     E2_len,
+        // }
+
+        let E2 = EqPolynomial::evals(w);
         Self {
             num_vars: w.len(),
-            E1,
-            E1_len,
+            E1: vec![F::ZERO],
+            E1_len: 1,
+            E2_len: E2.len(),
             E2,
-            E2_len,
         }
     }
 
@@ -257,7 +266,36 @@ impl<F: JoltField> SplitEqPolynomial<F> {
         }
     }
 
-    pub fn new_binded(E1: Vec<F>, E2: Vec<F>, num_vars: usize) -> Self {
+    pub fn new_chunk_custom(w: &[F], log_chunks: usize, k: usize, eq_pairs: usize) -> Self {
+        let num_vars = w.len() - log_chunks;
+        let eq_chunk_size = eq_pairs * 2;
+        let rows = 1 << w.len();
+        let offset = eq_chunk_size * k;
+        let cutoff = if k < (1 << log_chunks) - 1 {
+            eq_chunk_size * (k + 1)
+        } else {
+            rows
+        };
+        println!(
+            "eq size {} worker {} offset {} cutoff {}",
+            1 << w.len(),
+            k,
+            offset,
+            cutoff
+        );
+        let E2 = EqPolynomial::evals(w)[offset..cutoff].to_vec();
+        // E2.resize(1 << num_vars, F::ZERO);
+
+        Self {
+            num_vars,
+            E1: vec![F::ZERO],
+            E1_len: 1,
+            E2_len: E2.len(),
+            E2,
+        }
+    }
+
+    pub fn new_bound(E1: Vec<F>, E2: Vec<F>, num_vars: usize) -> Self {
         Self {
             num_vars,
             E1_len: E1.len(),

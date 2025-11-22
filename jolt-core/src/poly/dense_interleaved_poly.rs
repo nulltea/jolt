@@ -208,16 +208,24 @@ impl<F: JoltField, ProofTranscript: Transcript> BatchedCubicSumcheck<F, ProofTra
     ///                           |  |  |  |
     ///    left(0, 0, 0, ..., x_b=0) |  |  right(0, 0, 0, ..., x_b=1)
     ///     right(0, 0, 0, ..., x_b=0)  left(0, 0, 0, ..., x_b=1)
-    #[tracing::instrument(skip_all, name = "DenseInterleavedPolynomial::compute_cubic", level = "trace")]
+    #[tracing::instrument(
+        skip_all,
+        name = "DenseInterleavedPolynomial::compute_cubic",
+        level = "trace"
+    )]
     fn compute_cubic(&self, eq_poly: &SplitEqPolynomial<F>, previous_round_claim: F) -> UniPoly<F> {
         // We use the Dao-Thaler optimization for the EQ polynomial, so there are two cases we
         // must handle. For details, refer to Section 2.2 of https://eprint.iacr.org/2024/1210.pdf
         let cubic_evals = if eq_poly.E1_len == 1 {
+            println!("poly: {:?}", &self.coeffs[..self.len]);
             // If `eq_poly.E1` has been fully bound, we compute the cubic polynomial as we
             // would without the Dao-Thaler optimization, using the standard linear-time
             // sumcheck algorithm.
-            self.par_chunks(4)
-                .zip(eq_poly.E2.par_chunks(2))
+            // self.par_chunks(4)
+            //     .zip(eq_poly.E2.par_chunks(2))
+            self.coeffs[..self.len]
+                .chunks(4)
+                .zip(eq_poly.E2.chunks(2))
                 .map(|(layer_chunk, eq_chunk)| {
                     let eq_evals = {
                         let eval_point_0 = eq_chunk[0];
@@ -244,6 +252,14 @@ impl<F: JoltField, ProofTranscript: Transcript> BatchedCubicSumcheck<F, ProofTra
                     let right_eval_2 = right.1 + m_right;
                     let right_eval_3 = right_eval_2 + m_right;
 
+                    println!(
+                        "partial evals: {:?}",
+                        [
+                            [eq_evals.0, eq_evals.1, eq_evals.2],
+                            [left.0, left_eval_2, left_eval_3],
+                            [right.0, right_eval_2, right_eval_3]
+                        ]
+                    );
                     (
                         eq_evals.0 * left.0 * right.0,
                         eq_evals.1 * left_eval_2 * right_eval_2,
@@ -251,9 +267,10 @@ impl<F: JoltField, ProofTranscript: Transcript> BatchedCubicSumcheck<F, ProofTra
                     )
                 })
                 .reduce(
-                    || (F::zero(), F::zero(), F::zero()),
+                    // || (F::zero(), F::zero(), F::zero()),
                     |sum, evals| (sum.0 + evals.0, sum.1 + evals.1, sum.2 + evals.2),
                 )
+                .unwrap()
         } else {
             // If `eq_poly.E1` has NOT been fully bound, we compute the cubic polynomial
             // using the nested summation approach described in Section 2.2 of https://eprint.iacr.org/2024/1210.pdf
@@ -325,6 +342,10 @@ impl<F: JoltField, ProofTranscript: Transcript> BatchedCubicSumcheck<F, ProofTra
                     |sum, evals| (sum.0 + evals.0, sum.1 + evals.1, sum.2 + evals.2),
                 )
         };
+
+        println!("-------");
+        println!("cubic_evals: {:?}", cubic_evals);
+        println!("--------------");
 
         let cubic_evals = [
             cubic_evals.0,
