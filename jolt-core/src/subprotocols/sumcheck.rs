@@ -23,8 +23,10 @@ use ark_ff::{AdditiveGroup, Field, UniformRand};
 use ark_serialize::*;
 use itertools::{chain, concat, interleave, izip, Itertools};
 use rayon::prelude::*;
+use std::collections::BTreeSet;
 use std::env;
 use std::marker::PhantomData;
+use tokio::io::Split;
 use tracing_subscriber::layer;
 
 pub trait Bindable<F: JoltField>: Sync {
@@ -432,6 +434,7 @@ impl<F: JoltField, ProofTranscript: Transcript> SumcheckInstanceProof<F, ProofTr
         for _round in 0..worker_rounds {
             // Vector storing evaluations of combined polynomials g(x) = P_0(x) * ... P_{num_polys} (x)
             // for points {0, ..., |g(x)|}
+            println!("worker round {} poly: {}", _round, workers_polys[0].len());
 
             // let mle_half = workers_polys[0].len() / 2;
 
@@ -455,8 +458,8 @@ impl<F: JoltField, ProofTranscript: Transcript> SumcheckInstanceProof<F, ProofTr
 
             global_eq_pairs /= 2;
 
-            println!("eval points: {:?}", eval_points);
-            println!("--------------");
+            // println!("eval points: {:?}", eval_points);
+            // println!("--------------");
 
             eval_points.insert(1, previous_claim - eval_points[0]);
             let univariate_poly = UniPoly::from_evals(&eval_points);
@@ -484,7 +487,7 @@ impl<F: JoltField, ProofTranscript: Transcript> SumcheckInstanceProof<F, ProofTr
                 .collect_vec(),
         ));
 
-        println!("remaining poly {:?}", poly);
+        // println!("remaining poly {:?}", poly.coeffs);
 
         let remaining_rounds = num_rounds - worker_rounds;
 
@@ -530,24 +533,74 @@ fn dense_interleaved_sumcheck_evals<F: JoltField>(
     worker_idx: usize,
     num_workers: usize,
 ) -> Vec<F> {
+    // if worker_idx == 0 {
+    //     println!(
+    //         "split_eq_poly E1_len {} E2_len {} full {}",
+    //         eq_poly.E1_len,
+    //         eq_poly.E2_len,
+    //         eq_poly.E1_len * eq_poly.E2_len
+    //     );
+    // }
+    let (E1, E2) = split_eq_poly_permute(
+        eq_poly,
+        global_eq_pairs,
+        worker_idx,
+        num_workers,
+        // EqSplitAxis::Cols,
+    );
+    let E1_len = E1.len();
+    let E2_len = E2.len();
+
+    let split_eq_permuted = SplitEqPolynomial {
+        num_vars: eq_poly.num_vars - 1,
+        E1: E1.clone(),
+        E2: E2.clone(),
+        E1_len,
+        E2_len,
+    };
+
+    // if worker_idx == 0 {
+    //     println!(
+    //         "eq_poly (merged) len={}",
+    //         eq_poly.merge().Z.len(),
+    //         // eq_poly.merge().Z
+    //     );
+    // }
+
+    // println!(
+    //     "worker={} split_eq_permuted: E1_len = {}, E2_len = {}",
+    //     worker_idx, E1_len, E2_len
+    // );
+    assert_eq!(
+        split_eq_permuted.merge().Z,
+        custom_eq_permute(&eq_poly.merge().Z, global_eq_pairs, worker_idx, num_workers,),
+    );
+
     // We use the Dao-Thaler optimization for the EQ polynomial, so there are two cases we
     // must handle. For details, refer to Section 2.2 of https://eprint.iacr.org/2024/1210.pdf
     let cubic_evals = if eq_poly.E1_len == 1 {
         // If `eq_poly.E1` has been fully bound, we compute the cubic polynomial as we
         // would without the Dao-Thaler optimization, using the standard linear-time
         // sumcheck algorithm.
+
         poly.par_chunks(4)
-            // .zip(eq_poly.E2.par_chunks(2))
-            .enumerate()
-            .map(|(mle_i, layer_chunk, /*eq_chunk*/)| {
-                // let eq_evals = {
-                //     let eval_point_0 = eq_chunk[0];
-                //     let m_eq = eq_chunk[1] - eq_chunk[0];
-                //     let eval_point_2 = eq_chunk[1] + m_eq;
-                //     let eval_point_3 = eval_point_2 + m_eq;
-                //     (eval_point_0, eval_point_2, eval_point_3)
-                // };
-                let eq_evals = custom_eq_sumcheck_evals(&eq_poly.E2, mle_i, 3, global_eq_pairs, worker_idx, num_workers);
+            .zip(E2.par_chunks(2))
+            .map(|(layer_chunk, eq_chunk)| {
+                let eq_evals = {
+                    let eval_point_0 = eq_chunk[0];
+                    let m_eq = eq_chunk[1] - eq_chunk[0];
+                    let eval_point_2 = eq_chunk[1] + m_eq;
+                    let eval_point_3 = eval_point_2 + m_eq;
+                    (eval_point_0, eval_point_2, eval_point_3)
+                };
+                // let eq_evals = custom_eq_sumcheck_evals(
+                //     &eq_poly.E2,
+                //     mle_i,
+                //     3,
+                //     global_eq_pairs,
+                //     worker_idx,
+                //     num_workers,
+                // );
                 let left = (
                     *layer_chunk.first().unwrap_or(&F::zero()),
                     *layer_chunk.get(2).unwrap_or(&F::zero()),
@@ -567,9 +620,9 @@ fn dense_interleaved_sumcheck_evals<F: JoltField>(
                 let right_eval_3 = right_eval_2 + m_right;
 
                 (
-                    eq_evals[0] * left.0 * right.0,
-                    eq_evals[1] * left_eval_2 * right_eval_2,
-                    eq_evals[2] * left_eval_3 * right_eval_3,
+                    eq_evals.0 * left.0 * right.0,
+                    eq_evals.1 * left_eval_2 * right_eval_2,
+                    eq_evals.2 * left_eval_3 * right_eval_3,
                 )
             })
             .reduce(
@@ -593,7 +646,7 @@ fn dense_interleaved_sumcheck_evals<F: JoltField>(
 
         // We start by computing the E1 evals:
         // (1 - j) * E1[0, x1] + j * E1[1, x1]
-        let E1_evals: Vec<_> = eq_poly.E1[..eq_poly.E1_len]
+        let E1_evals: Vec<_> = E1[..E1_len]
             .par_chunks(2)
             .map(|E1_chunk| {
                 let eval_point_0 = E1_chunk[0];
@@ -604,10 +657,12 @@ fn dense_interleaved_sumcheck_evals<F: JoltField>(
             })
             .collect();
 
-        let chunk_size = (poly.len().next_power_of_two() / eq_poly.E2_len).max(1);
-        eq_poly.E2[..eq_poly.E2_len]
-            .par_iter()
-            .zip(poly.par_chunks(chunk_size))
+        let chunk_size = (poly.len().next_power_of_two() / E2_len).max(1);
+        E2[..E2_len]
+            // .par_iter()
+            .iter()
+            // .zip(poly.par_chunks(chunk_size))
+            .zip(poly.coeffs[..poly.len()].chunks(chunk_size))
             .map(|(E2_eval, P_x2)| {
                 // The for-loop below corresponds to the inner sum:
                 // \sum_x1 ((1 - j) * E1[0, x1] + j * E1[1, x1]) * \prod_k ((1 - j) * P_k(0 || x1 || x2) + j * P_k(1 || x1 || x2))
@@ -630,6 +685,17 @@ fn dense_interleaved_sumcheck_evals<F: JoltField>(
                     let right_eval_2 = right.1 + m_right;
                     let right_eval_3 = right_eval_2 + m_right;
 
+                    // println!(
+                    //     "worker {} index {} eq_evals: {:?}",
+                    //     worker_idx,
+                    //     mle_i,
+                    //     [
+                    //         E1_evals.0 * E2_eval,
+                    //         E1_evals.1 * E2_eval,
+                    //         E1_evals.2 * E2_eval,
+                    //     ]
+                    // );
+
                     inner_sum.0 += E1_evals.0 * left.0 * right.0;
                     inner_sum.1 += E1_evals.1 * left_eval_2 * right_eval_2;
                     inner_sum.2 += E1_evals.2 * left_eval_3 * right_eval_3;
@@ -643,63 +709,281 @@ fn dense_interleaved_sumcheck_evals<F: JoltField>(
                 )
             })
             .reduce(
-                || (F::zero(), F::zero(), F::zero()),
+                // || (F::zero(), F::zero(), F::zero()),
                 |sum, evals| (sum.0 + evals.0, sum.1 + evals.1, sum.2 + evals.2),
-            )
+            ).unwrap()
     };
 
     vec![cubic_evals.0, cubic_evals.1, cubic_evals.2]
 }
 
-/// Compute sumcheck evaluations for the equality polynomial in a distributed setting
-/// with `W >= 2` workers (assume `W` is a power of two), using the same logical wiring
-/// as the local, non-distributed sumcheck.
+/// Pre-permute equality polynomial evaluations for distributed sumcheck.
 ///
-/// Conceptually, we do not reshuffle coefficient arrays. Instead, we view the global
-/// index space at this round (`0..EQ_HALF`) as split into contiguous blocks, and we
-/// stripe these blocks across workers round-robin. Each worker’s local index walks
-/// through its own striped view. This reproduces the exact pairs `(2i, 2i+1)` the local
-/// prover would multiply, but without materializing any intermediate vectors.
+/// Reorders `eq_evals` for a specific `worker` among `num_workers` so that
+/// taking 2-element chunks yields the low/high pair for the worker’s local
+/// sumcheck index `i`, without recomputing an index-dependent permutation.
 ///
-/// Mapping without allocation:
-/// - `BLOCK = CHUNK_PER_WORKER / W` (must divide evenly)
-/// - For a worker `w` and local index `i`, let `k = i / BLOCK` and `off = i % BLOCK`.
-/// - The corresponding global index is `g = (k*W + w)*BLOCK + off`.
+/// Mapping used (independent of `i`):
+/// - Let `BLOCK = global_eq_pairs / num_workers` (must divide evenly).
+/// - For `i` in the worker’s local range, the corresponding global pair index is
+///   `g(i) = ( (i / BLOCK) * num_workers + worker ) * BLOCK + (i % BLOCK)`.
+/// - The output is `[eq[2*g(0)], eq[2*g(0)+1], eq[2*g(1)], eq[2*g(1)+1], ...]`.
 ///
-/// We then perform the standard LowToHigh sumcheck evaluation at `g`:
-/// `evals[j] = P(2g + j)` for `j` on the univariate degree points.
-fn custom_eq_sumcheck_evals<F: JoltField>(
+/// Feasibility check: a single static permutation exists when the total number of
+/// pairs `|eq_evals|/2` is divisible by `global_eq_pairs`. This holds in our use
+/// case since all sizes are powers of two.
+fn custom_eq_permute<F: JoltField>(
     eq_evals: &[F],
-    index: usize,
-    degree: usize,
     global_eq_pairs: usize,
     worker: usize,
     num_workers: usize,
 ) -> Vec<F> {
-    // println!("custom eq | chunk_mle: {} index {}", global_eq_pairs, index);
     debug_assert!(num_workers >= 2 && num_workers.is_power_of_two());
     debug_assert!(global_eq_pairs >= num_workers);
     debug_assert_eq!(global_eq_pairs % num_workers, 0);
 
-    // Compute the global index without allocating intermediate vectors.
-    let block_size = global_eq_pairs / num_workers;
-    let k = index / block_size; // which block within the worker's sequence
-    let offset = index % block_size; // position inside that block
-    let global_block = k * num_workers + worker;
-    let global_index = global_block * block_size + offset;
+    let total = eq_evals.len();
+    debug_assert_eq!(total % 2, 0, "eq_evals length must be even");
+    let num_pairs_total = total / 2;
 
-    let mut evals = vec![F::zero(); degree];
-    evals[0] = eq_evals[2 * global_index];
-    if degree == 1 {
-        return evals;
+    // Ensure a uniform, index-independent permutation exists.
+    assert!(
+        num_pairs_total % global_eq_pairs == 0,
+        "num_pairs_total must be divisible by global_eq_pairs"
+    );
+
+    let block = global_eq_pairs / num_workers; // pairs per block
+    let cols = num_pairs_total / global_eq_pairs; // repetitions per residue class
+    let pairs_per_worker = num_pairs_total / num_workers;
+    let mut out = Vec::with_capacity(pairs_per_worker * 2);
+
+    for k in 0..cols {
+        let base = (k * num_workers + worker) * block;
+        for off in 0..block {
+            let g = base + off;
+            let idx = 2 * g;
+            out.push(eq_evals[idx]);
+            out.push(eq_evals[idx + 1]);
+        }
     }
-    let mut eval = eq_evals[2 * global_index + 1];
-    let m = eval - evals[0];
-    for i in 1..degree {
-        eval += m;
-        evals[i] = eval;
+
+    debug_assert_eq!(out.len(), pairs_per_worker * 2);
+    out
+}
+
+// pub enum EqSplitAxis {
+//     Rows, // split along E2 (row) dimension
+//     Cols, // split along E1 (column) dimension
+// }
+
+// pub fn split_eq_poly_permute<F: JoltField>(
+//     eq_poly: &SplitEqPolynomial<F>,
+//     global_eq_pairs: usize,
+//     worker: usize,
+//     num_workers: usize,
+// ) -> (Vec<F>, Vec<F>) {
+//     debug_assert!(num_workers >= 2 && num_workers.is_power_of_two());
+//     debug_assert!(global_eq_pairs >= num_workers);
+//     debug_assert_eq!(global_eq_pairs % num_workers, 0);
+
+//     let e1_len = eq_poly.E1_len;
+//     let e2_len = eq_poly.E2_len;
+
+//     if e1_len == 1 {
+//         // Degenerate case: E1 is fully bound; the factorization is trivial.
+//         let e1_out = eq_poly.E1[..e1_len].to_vec();
+//         let e2_out = custom_eq_permute(&eq_poly.E2[..e2_len], global_eq_pairs, worker, num_workers);
+//         return (e1_out, e2_out);
+//     }
+
+//     let total = e1_len * e2_len;
+//     debug_assert_eq!(total % 2, 0, "eq table length must be even");
+//     let num_pairs_total = total / 2;
+
+//     // This is how many pairs this worker actually owns.
+//     let pairs_per_worker = num_pairs_total / num_workers;
+//     let expected_len = pairs_per_worker * 2;
+
+//     // Split the E1 dimension: each worker gets a contiguous block of columns.
+//     debug_assert_eq!(
+//         e1_len % num_workers,
+//         0,
+//         "E1_len must be divisible by num_workers for col split"
+//     );
+//     // let cols_per_worker = e1_len / num_workers;
+//     // let col_start = worker * cols_per_worker;
+//     // let col_end = col_start + cols_per_worker;
+
+//     // debug_assert_eq!(
+//     //     cols_per_worker * e2_len,
+//     //     expected_len,
+//     //     "col split size mismatch with custom_eq_permute"
+//     // );
+
+//     // E1 is sliced; E2 is shared.
+//     // let mut E1_new = Vec::with_capacity(cols_per_worker);
+//     // E1_new.extend_from_slice(&eq_poly.E1[col_start..col_end]);
+//     let E1_new = custom_eq_permute(&eq_poly.E1, global_eq_pairs, worker, num_workers);
+
+//     let E2_new = eq_poly.E2[..e2_len].to_vec();
+
+//     (E1_new, E2_new)
+// }
+
+pub fn split_eq_poly_permute<F: JoltField>(
+    eq_poly: &SplitEqPolynomial<F>,
+    global_eq_pairs: usize,
+    worker: usize,
+    num_workers: usize,
+) -> (Vec<F>, Vec<F>) {
+    debug_assert!(num_workers >= 2 && num_workers.is_power_of_two());
+    debug_assert!(global_eq_pairs >= num_workers);
+    debug_assert_eq!(global_eq_pairs % num_workers, 0);
+
+    let e1_len = eq_poly.E1_len;
+    let e2_len = eq_poly.E2_len;
+    debug_assert!(e1_len > 0 && e2_len > 0);
+
+    // Degenerate 1D case: just reuse custom_eq_permute on E2.
+    if e1_len == 1 {
+        let eq_evals = &eq_poly.E2[..e2_len];
+        let total = eq_evals.len();
+        debug_assert_eq!(total % 2, 0, "eq_evals length must be even");
+        let num_pairs_total = total / 2;
+
+        assert!(
+            num_pairs_total % global_eq_pairs == 0,
+            "num_pairs_total must be divisible by global_eq_pairs"
+        );
+
+        let block = global_eq_pairs / num_workers;
+        let cols = num_pairs_total / global_eq_pairs;
+        let pairs_per_worker = num_pairs_total / num_workers;
+
+        let mut out_e2 = Vec::with_capacity(pairs_per_worker * 2);
+        for k in 0..cols {
+            let base = (k * num_workers + worker) * block;
+            for off in 0..block {
+                let g = base + off;
+                let idx = 2 * g;
+                out_e2.push(eq_evals[idx]);
+                out_e2.push(eq_evals[idx + 1]);
+            }
+        }
+        debug_assert_eq!(out_e2.len(), pairs_per_worker * 2);
+        let out_e1 = eq_poly.E1[..1].to_vec();
+        return (out_e1, out_e2);
     }
-    evals
+
+    // General 2D factorized case.
+    let total = e1_len * e2_len;
+    debug_assert_eq!(total % 2, 0, "eq table length must be even");
+    let num_pairs_total = total / 2;
+    assert!(
+        num_pairs_total % global_eq_pairs == 0,
+        "num_pairs_total must be divisible by global_eq_pairs"
+    );
+
+    let block = global_eq_pairs / num_workers; // pairs per block
+    let cols = num_pairs_total / global_eq_pairs; // repetitions
+    let pairs_per_worker = num_pairs_total / num_workers;
+    let expected_len = pairs_per_worker * 2;
+
+    // Collect which rows and columns this worker actually touches (based on idx = 2g).
+    let mut row_set: BTreeSet<usize> = BTreeSet::new();
+    let mut col_even: BTreeSet<usize> = BTreeSet::new();
+
+    for k in 0..cols {
+        for off in 0..block {
+            let g = (k * num_workers + worker) * block + off;
+            let idx = 2 * g; // first index of (2g,2g+1)
+            let row = idx / e1_len;
+            let col = idx % e1_len;
+            row_set.insert(row);
+            if row == 0 {
+                col_even.insert(col);
+            }
+        }
+    }
+
+    // Columns from row 0: each pair contributes (c, c+1).
+    let mut col_set: BTreeSet<usize> = BTreeSet::new();
+    for c in col_even {
+        col_set.insert(c);
+        let c1 = c + 1;
+        assert!(c1 < e1_len, "pair (2g,2g+1) crosses row boundary");
+        col_set.insert(c1);
+    }
+
+    let all_rows_len = e2_len;
+    let all_cols_len = e1_len;
+    let row_full = row_set.len() == all_rows_len;
+    let col_full = col_set.len() == all_cols_len;
+    let col_nonempty = !col_set.is_empty();
+
+    // Case A: column split (all rows, subset of columns).
+    if row_full && col_nonempty && col_set.len() < all_cols_len {
+        let cols_for_worker: Vec<usize> = col_set.into_iter().collect();
+        let e1_len_worker = cols_for_worker.len();
+        debug_assert_eq!(
+            expected_len % e1_len_worker,
+            0,
+            "worker chunk len {} not multiple of E1_len_worker {}",
+            expected_len,
+            e1_len_worker
+        );
+        let e2_len_worker = expected_len / e1_len_worker;
+        debug_assert_eq!(
+            e2_len_worker, e2_len,
+            "Cols split: expected to keep E2_len {}, got {}",
+            e2_len, e2_len_worker
+        );
+
+        let mut E1_new = Vec::with_capacity(e1_len_worker);
+        for c in cols_for_worker {
+            E1_new.push(eq_poly.E1[c]);
+        }
+        let mut E2_new = Vec::with_capacity(e2_len_worker);
+        E2_new.extend_from_slice(&eq_poly.E2[..e2_len_worker]);
+
+        return (E1_new, E2_new);
+    }
+
+    // Case B: row split (subset of rows, all columns).
+    if row_set.len() < all_rows_len && (col_set.is_empty() || col_full) {
+        let mut rows_for_worker: Vec<usize> = row_set.into_iter().collect();
+        rows_for_worker.sort();
+        let e2_len_worker = rows_for_worker.len();
+        debug_assert_eq!(
+            expected_len % e1_len,
+            0,
+            "worker chunk len {} not multiple of E1_len {}",
+            expected_len,
+            e1_len
+        );
+        debug_assert_eq!(
+            expected_len / e1_len,
+            e2_len_worker,
+            "Rows split: expected E2_len_worker {} from permutation, got {}",
+            expected_len / e1_len,
+            e2_len_worker
+        );
+
+        let mut E2_new = Vec::with_capacity(e2_len_worker);
+        for r in rows_for_worker {
+            E2_new.push(eq_poly.E2[r]);
+        }
+        let E1_new = eq_poly.E1[..e1_len].to_vec();
+
+        return (E1_new, E2_new);
+    }
+
+    // Anything else would mix rows and columns in a non-separable way.
+    panic!(
+        "split_eq_poly_permute: unsupported worker pattern (rows={}, cols={})",
+        row_set.len(),
+        col_set.len()
+    );
 }
 
 #[cfg(test)]
@@ -784,15 +1068,15 @@ fn run_distributed_gkr_simulation<F: JoltField>(chunk_size: usize, N: usize, W: 
             .collect(),
     };
 
-    println!(
-        "input layer ({}) | polys: {:?}",
-        input_layer.layer_idx,
-        input_layer
-            .polys
-            .iter()
-            .map(|p| &p.coeffs)
-            .collect::<Vec<_>>()
-    );
+    // println!(
+    //     "input layer ({}) | polys: {:?}",
+    //     input_layer.layer_idx,
+    //     input_layer
+    //         .polys
+    //         .iter()
+    //         .map(|p| &p.coeffs)
+    //         .collect::<Vec<_>>()
+    // );
 
     let worker_num_layers = num_layers - 2 - W_log2;
     let mut worker_layers = vec![input_layer];
@@ -806,11 +1090,11 @@ fn run_distributed_gkr_simulation<F: JoltField>(chunk_size: usize, N: usize, W: 
             .par_iter()
             .map(DenseInterleavedPolynomial::layer_output)
             .collect::<Vec<_>>();
-        println!(
-            "worker layer {} | out: {:?}",
-            layer_idx,
-            polys.iter().map(|p| &p.coeffs).collect::<Vec<_>>()
-        );
+        // println!(
+        //     "worker layer {} | out: {:?}",
+        //     layer_idx,
+        //     polys.iter().map(|p| &p.coeffs).collect::<Vec<_>>()
+        // );
         println!("-------------");
 
         // `MultilinearPolynomial::sumcheck_evals`'s the semantic pairing is (2i, 2i+1) in the coefficient array.
@@ -851,11 +1135,11 @@ fn run_distributed_gkr_simulation<F: JoltField>(chunk_size: usize, N: usize, W: 
                 })
                 .collect::<Vec<_>>();
 
-            println!(
-                "worker layer {} | outputs by worker: {:?}",
-                num_layers - worker_num_layers,
-                prev_outputs_by_worker
-            );
+            // println!(
+            //     "worker layer {} | outputs by worker: {:?}",
+            //     num_layers - worker_num_layers,
+            //     prev_outputs_by_worker
+            // );
             println!("-------------");
 
             // We restore order of results like this:
@@ -871,11 +1155,11 @@ fn run_distributed_gkr_simulation<F: JoltField>(chunk_size: usize, N: usize, W: 
             .flatten()
             .copied()
             .collect::<Vec<_>>();
-            println!(
-                "worker layer {} | next_layer_coeffs: {:?}",
-                num_layers - worker_num_layers,
-                next_layer_coeffs
-            );
+            // println!(
+            //     "worker layer {} | next_layer_coeffs: {:?}",
+            //     num_layers - worker_num_layers,
+            //     next_layer_coeffs
+            // );
             switched = true;
             DenseInterleavedPolynomial::new(next_layer_coeffs)
         } else {
@@ -891,10 +1175,10 @@ fn run_distributed_gkr_simulation<F: JoltField>(chunk_size: usize, N: usize, W: 
             polys: vec![next_layer_poly],
         };
 
-        println!(
-            "coordinator layer {} | poly {:?}",
-            layer_idx, next_layer.polys[0].coeffs
-        );
+        // println!(
+        //     "coordinator layer {} | poly {:?}",
+        //     layer_idx, next_layer.polys[0].coeffs
+        // );
         coordinator_layers.push(next_layer);
     }
 
@@ -904,7 +1188,7 @@ fn run_distributed_gkr_simulation<F: JoltField>(chunk_size: usize, N: usize, W: 
         izip!(left, right).map(|(a, b)| a * b).collect::<Vec<_>>()
     };
 
-    println!("gkr output {:?}", grand_product_output);
+    // println!("gkr output {:?}", grand_product_output);
 
     println!("\n/---------- Coordinator prover ----------/");
 
@@ -949,20 +1233,20 @@ fn run_distributed_gkr_simulation<F: JoltField>(chunk_size: usize, N: usize, W: 
 
     let mut chunk_size_per_worker = 2;
     for mut layer in worker_layers.iter().cloned().rev() {
-        println!(
-            "layer {} rounds: {:?} polys: {:?}",
-            layer.layer_idx,
-            num_rounds,
-            layer.polys.iter().map(|p| &p.coeffs).collect::<Vec<_>>()
-        );
+        // println!(
+        //     "layer {} rounds: {:?} polys: {:?}",
+        //     layer.layer_idx,
+        //     num_rounds,
+        //     layer.polys.iter().map(|p| &p.coeffs).collect::<Vec<_>>()
+        // );
 
         let mut eq_poly = SplitEqPolynomial::new(&r_grand_product);
 
-        // Setting eq_poly.E1_len to 1 turns it into oridnary EqPolynomial
-        eq_poly.E1_len = 1;
-        eq_poly.E1 = vec![F::one()];
-        eq_poly.E2 = EqPolynomial::evals(&r_grand_product);
-        eq_poly.E2_len = eq_poly.E2.len();
+        // // Setting eq_poly.E1_len to 1 turns it into oridnary EqPolynomial
+        // eq_poly.E1_len = 1;
+        // eq_poly.E1 = vec![F::one()];
+        // eq_poly.E2 = EqPolynomial::evals(&r_grand_product);
+        // eq_poly.E2_len = eq_poly.E2.len();
 
         let (proof, r_sumcheck, (left_claim, right_claim)) =
             SumcheckInstanceProof::<F, KeccakTranscript>::simulate_distributed_prove_cubic(
@@ -1332,6 +1616,7 @@ fn test_cases_distributed_gkr_simulation() {
         (min_chunk_size, min_chunk_size),
         (min_chunk_size, min_chunk_size * 2),
         (min_chunk_size, 3),
+        // (1 << 9, min_chunk_size), // read_write mini
         (1 << 13, 102), // read_write
         (1 << 16, 75),  // init_final
     ];
@@ -1341,6 +1626,162 @@ fn test_cases_distributed_gkr_simulation() {
         println!("/-----------------------------------------/");
     }
 }
+
+/// Compute sumcheck evaluations for the equality polynomial in a distributed setting
+/// with `W >= 2` workers (assume `W` is a power of two), using the same logical wiring
+/// as the local, non-distributed sumcheck.
+///
+/// Conceptually, we do not reshuffle coefficient arrays. Instead, we view the global
+/// index space at this round (`0..EQ_HALF`) as split into contiguous blocks, and we
+/// stripe these blocks across workers round-robin. Each worker’s local index walks
+/// through its own striped view. This reproduces the exact pairs `(2i, 2i+1)` the local
+/// prover would multiply, but without materializing any intermediate vectors.
+///
+/// Mapping without allocation:
+/// - `BLOCK = global_eq_pairs / W` (must divide evenly)
+/// - For a worker `w` and local index `i`, let `k = i / BLOCK` and `off = i % BLOCK`.
+/// - The corresponding global index is `g = (k*W + w)*BLOCK + off`.
+///
+/// We then perform the standard LowToHigh sumcheck evaluation at `g`:
+/// `evals[j] = P(2g + j)` for `j` on the univariate degree points.
+fn custom_eq_sumcheck_evals<F: JoltField>(
+    eq_evals: &[F],
+    index: usize,
+    degree: usize,
+    global_eq_pairs: usize,
+    worker: usize,
+    num_workers: usize,
+) -> Vec<F> {
+    // println!("custom eq | chunk_mle: {} index {}", global_eq_pairs, index);
+    debug_assert!(num_workers >= 2 && num_workers.is_power_of_two());
+    debug_assert!(global_eq_pairs >= num_workers);
+    debug_assert_eq!(global_eq_pairs % num_workers, 0);
+
+    // Compute the global index without allocating intermediate vectors.
+    let block_size = global_eq_pairs / num_workers;
+    let k = index / block_size; // which block within the worker's sequence
+    let offset = index % block_size; // position inside that block
+    let global_block = k * num_workers + worker;
+    let global_index = global_block * block_size + offset;
+
+    let mut evals = vec![F::zero(); degree];
+    evals[0] = eq_evals[2 * global_index];
+    if degree == 1 {
+        return evals;
+    }
+    let mut eval = eq_evals[2 * global_index + 1];
+    let m = eval - evals[0];
+    for i in 1..degree {
+        eval += m;
+        evals[i] = eval;
+    }
+    evals
+}
+// /// Return a worker-local permutation of `(E1, E2)` consistent with the
+// /// `custom_eq_permute` order on flattened EQ evals, preserving the E1/E2 factorization.
+// ///
+// /// Feasibility and behavior:
+// /// - If `E1_len == 1` (first half fully bound), the EQ table reduces to `E2` and the
+// ///   permutation is identical to `custom_eq_permute` applied to `E2`. We return
+// ///   `(E1, E2_worker)` with `E1` unchanged and `E2_worker` containing only the rows
+// ///   assigned to `worker` in the permuted order.
+// /// - If `E1_len > 1`, a consistent factorization exists if and only if the worker block
+// ///   size in pair units, `block_pairs = global_eq_pairs / W`, is a multiple of
+// ///   `pairs_per_row = E1_len / 2`. In that case, the permutation separates as a pure
+// ///   row permutation on `E2` with `E1` unchanged; we return `(E1, E2_worker)` where
+// ///   `E2_worker` lists the selected rows for `worker` in order. Otherwise, the
+// ///   permutation is not separable across `(E1, E2)`, and this function will panic.
+// fn split_eq_poly_permute<F: JoltField>(
+//     eq_poly: &SplitEqPolynomial<F>,
+//     global_eq_pairs: usize,
+//     worker: usize,
+//     num_workers: usize,
+// ) -> (Vec<F>, Vec<F>) {
+//     debug_assert!(num_workers >= 2 && num_workers.is_power_of_two());
+//     debug_assert!(global_eq_pairs >= num_workers);
+//     debug_assert_eq!(global_eq_pairs % num_workers, 0);
+
+//     let e1_len = eq_poly.E1_len;
+//     let e2_len = eq_poly.E2_len;
+
+//     if e1_len == 1 {
+//         // Degenerate case: E1 is fully bound; the factorization is trivial.
+//         let e1_out = eq_poly.E1[..e1_len].to_vec();
+//         let e2_out = custom_eq_permute(&eq_poly.E2[..e2_len], global_eq_pairs, worker, num_workers);
+//         return (e1_out, e2_out);
+//     }
+
+//     // General case: attempt to separate the permutation across E2 rows and E1 columns.
+//     assert_eq!(e1_len % 2, 0, "E1_len must be even");
+//     let pairs_per_row = e1_len / 2; // number of (low, high) pairs per E2 row
+//     let num_pairs_total = e2_len * pairs_per_row;
+//     assert!(
+//         num_pairs_total % global_eq_pairs == 0,
+//         "num_pairs_total must be divisible by global_eq_pairs"
+//     );
+
+//     let eq_dummy = (0u64..((e1_len * e2_len) as u64))
+//         .map(F::from)
+//         .collect_vec();
+//     println!(
+//         "eq_dummy_permuted_16: {:?}",
+//         [
+//             custom_eq_permute(&eq_dummy, global_eq_pairs, 0, num_workers),
+//             custom_eq_permute(&eq_dummy, global_eq_pairs, 1, num_workers)
+//         ]
+//     );
+//     let mut dummy_split_eq = SplitEqPolynomial::new(&(0u64..4).map(F::from).collect_vec());
+//     println!(
+//         "dummy_split_eq: [{:?}, {:?}]",
+//         dummy_split_eq.E1, dummy_split_eq.E2
+//     );
+
+//     println!("dummy_split_eq merged: {:?}", dummy_split_eq.merge().Z);
+//     for w in 0..num_workers {
+//         let dummy_split_eq_merged_permuted = custom_eq_permute(
+//             &dummy_split_eq.merge().Z,
+//             global_eq_pairs,
+//             worker,
+//             num_workers,
+//         );
+//         dummy_split_eq.E1 = custom_eq_permute(&dummy_split_eq.E1, global_eq_pairs, w, num_workers);
+//         dummy_split_eq.E2 = custom_eq_permute(&dummy_split_eq.E2, global_eq_pairs, w, num_workers);
+//         dummy_split_eq.E1_len /= 2;
+//         dummy_split_eq.E2_len /= 2;
+//         assert_eq!(
+//             dummy_split_eq.merge().Z,
+//             dummy_split_eq_merged_permuted[w * 4..w * 4 + 4]
+//         );
+//     }
+//     let block_pairs = global_eq_pairs / num_workers;
+//     println!(
+//         "e1_len {} e2_len {} block_pairs {} pairs_per_row {}",
+//         e1_len, e2_len, block_pairs, pairs_per_row
+//     );
+//     assert!(
+//         block_pairs % pairs_per_row == 0,
+//         "Permutation not separable: block_pairs (global_eq_pairs/num_workers) must be a multiple of pairs_per_row (E1_len/2)."
+//     );
+//     let rows_per_block = block_pairs / pairs_per_row;
+//     assert!(
+//         e2_len % (rows_per_block * num_workers) == 0,
+//         "E2_len must be divisible by rows_per_block * num_workers"
+//     );
+
+//     let cols = e2_len / (rows_per_block * num_workers);
+
+//     let e1_out = eq_poly.E1[..e1_len].to_vec(); // unchanged
+//     let mut e2_out = Vec::with_capacity(e2_len / num_workers);
+//     for k in 0..cols {
+//         let base_row = (k * num_workers + worker) * rows_per_block;
+//         for r in 0..rows_per_block {
+//             e2_out.push(eq_poly.E2[base_row + r]);
+//         }
+//     }
+
+//     debug_assert_eq!(e2_out.len(), e2_len / num_workers);
+//     (e1_out, e2_out)
+// }
 
 /// Interleave N vectors:
 /// [v0[0], v1[0], v2[0], ..., v0[1], v1[1], v2[1], ...]

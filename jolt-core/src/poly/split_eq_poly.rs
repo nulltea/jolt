@@ -1,6 +1,6 @@
 //! Implements the Dao-Thaler optimization for EQ polynomial evaluations
 //! https://eprint.iacr.org/2024/1210.pdf
-#[cfg(test)]
+// #[cfg(test)]
 use super::dense_mlpoly::DensePolynomial;
 use crate::{field::JoltField, poly::eq_poly::EqPolynomial};
 
@@ -29,7 +29,7 @@ pub struct GruenSplitEqPolynomial<F> {
 /// Old struct for split equality polynomial, without Gruen's optimization
 /// TODO: remove all usage of this struct with the new one
 pub struct SplitEqPolynomial<F> {
-    num_vars: usize,
+    pub num_vars: usize,
     pub E1: Vec<F>,
     pub E1_len: usize,
     pub E2: Vec<F>,
@@ -306,7 +306,7 @@ impl<F: JoltField> SplitEqPolynomial<F> {
         }
     }
 
-    #[cfg(test)]
+    // #[cfg(test)]
     pub fn merge(&self) -> DensePolynomial<F> {
         if self.E1_len == 1 {
             DensePolynomial::new(self.E2[..self.E2_len].to_vec())
