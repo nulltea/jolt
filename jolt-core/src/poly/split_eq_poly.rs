@@ -268,11 +268,10 @@ impl<F: JoltField> SplitEqPolynomial<F> {
 
     pub fn new_chunk_custom(w: &[F], log_chunks: usize, k: usize, eq_pairs: usize) -> Self {
         let num_vars = w.len() - log_chunks;
-        let eq_chunk_size = eq_pairs * 2;
         let rows = 1 << w.len();
-        let offset = eq_chunk_size * k;
+        let offset = eq_pairs * k;
         let cutoff = if k < (1 << log_chunks) - 1 {
-            eq_chunk_size * (k + 1)
+            eq_pairs * (k + 1)
         } else {
             rows
         };

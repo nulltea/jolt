@@ -109,6 +109,7 @@ pub struct CompactPolynomial<T: SmallScalar, F: JoltField> {
     pub coeffs: Vec<T>,
     pub bound_coeffs: Vec<F>,
     binding_scratch_space: Option<Vec<F>>,
+    chunk_range: (usize, usize),
 }
 
 impl<T: SmallScalar, F: JoltField> CompactPolynomial<T, F> {
@@ -122,6 +123,32 @@ impl<T: SmallScalar, F: JoltField> CompactPolynomial<T, F> {
         CompactPolynomial {
             num_vars: coeffs.len().log_2(),
             len: coeffs.len(),
+            chunk_range: (0, coeffs.len()),
+            coeffs,
+            bound_coeffs: vec![],
+            binding_scratch_space: None,
+        }
+    }
+
+    pub fn shard_from_coeffs(coeffs: Vec<T>, shard_nv: usize, shard_idx: usize) -> Self {
+        assert!(
+            utils::is_power_of_two(coeffs.len()),
+            "Multilinear polynomials must be made from a power of 2 (not {})",
+            coeffs.len()
+        );
+
+        let chunk_size = 1 << shard_nv;
+
+        let chunk_range = if shard_nv == coeffs.len().log_2() {
+            (0, coeffs.len())
+        } else {
+            (shard_idx * chunk_size, (shard_idx + 1) * chunk_size)
+        };
+
+        CompactPolynomial {
+            num_vars: shard_nv,
+            len: chunk_size,
+            chunk_range,
             coeffs,
             bound_coeffs: vec![],
             binding_scratch_space: None,
@@ -145,7 +172,14 @@ impl<T: SmallScalar, F: JoltField> CompactPolynomial<T, F> {
     }
 
     pub fn coeffs_as_field_elements(&self) -> Vec<F> {
-        self.coeffs.par_iter().map(|x| x.to_field()).collect()
+        self.coeffs[self.chunk_range.0..self.chunk_range.1]
+            .par_iter()
+            .map(|x| x.to_field())
+            .collect()
+    }
+
+    pub fn coeffs_ref(&self) -> &[T] {
+        &self.coeffs[self.chunk_range.0..self.chunk_range.1]
     }
 }
 
@@ -157,6 +191,9 @@ impl<T: SmallScalar, F: JoltField> PolynomialBinding<F> for CompactPolynomial<T,
     #[tracing::instrument(skip_all, name = "CompactPolynomial::bind", level = "trace")]
     fn bind(&mut self, r: F, order: BindingOrder) {
         let n = self.len() / 2;
+        let offset = self.chunk_range.0;
+        let cutoff = self.chunk_range.1;
+
         if self.is_bound() {
             match order {
                 BindingOrder::LowToHigh => {
@@ -190,8 +227,8 @@ impl<T: SmallScalar, F: JoltField> PolynomialBinding<F> for CompactPolynomial<T,
                 BindingOrder::LowToHigh => {
                     self.bound_coeffs = (0..n)
                         .map(|i| {
-                            let a = self.coeffs[2 * i];
-                            let b = self.coeffs[2 * i + 1];
+                            let a = self.coeffs[offset + 2 * i];
+                            let b = self.coeffs[offset + 2 * i + 1];
                             match a.cmp(&b) {
                                 Ordering::Equal => a.to_field(),
                                 // a < b: Compute a + r * (b - a)
@@ -207,7 +244,7 @@ impl<T: SmallScalar, F: JoltField> PolynomialBinding<F> for CompactPolynomial<T,
                         .collect();
                 }
                 BindingOrder::HighToLow => {
-                    let (left, right) = self.coeffs.split_at(n);
+                    let (left, right) = self.coeffs[offset..cutoff].split_at(n);
                     self.bound_coeffs = left
                         .iter()
                         .zip(right.iter())
@@ -235,6 +272,9 @@ impl<T: SmallScalar, F: JoltField> PolynomialBinding<F> for CompactPolynomial<T,
     #[tracing::instrument(skip_all, name = "CompactPolynomial::bind", level = "trace")]
     fn bind_parallel(&mut self, r: F, order: BindingOrder) {
         let n = self.len() / 2;
+        let offset = self.chunk_range.0;
+        let cutoff = self.chunk_range.1;
+
         if self.is_bound() {
             match order {
                 BindingOrder::LowToHigh => {
@@ -273,8 +313,8 @@ impl<T: SmallScalar, F: JoltField> PolynomialBinding<F> for CompactPolynomial<T,
                     self.bound_coeffs = (0..n)
                         .into_par_iter()
                         .map(|i| {
-                            let a = self.coeffs[2 * i];
-                            let b = self.coeffs[2 * i + 1];
+                            let a = self.coeffs[offset + 2 * i];
+                            let b = self.coeffs[offset + 2 * i + 1];
                             match a.cmp(&b) {
                                 Ordering::Equal => a.to_field(),
                                 // a < b: Compute a + r * (b - a)
@@ -290,7 +330,7 @@ impl<T: SmallScalar, F: JoltField> PolynomialBinding<F> for CompactPolynomial<T,
                         .collect();
                 }
                 BindingOrder::HighToLow => {
-                    let (left, right) = self.coeffs.split_at(n);
+                    let (left, right) = self.coeffs[offset..cutoff].split_at(n);
                     self.bound_coeffs = left
                         .par_iter()
                         .zip(right.par_iter())
