@@ -1064,24 +1064,25 @@ pub fn split_eq_poly_permute<F: JoltField>(
     );
 }
 
-/// Compute per-worker delta in *elements* for given batch_size, num_workers (power of 2),
-/// and chunk_size = 2^L (elements per chunk).
-/// Uses:
+/// Compute per-worker delta in *chunks* for given batch_size (in chunks) and num_workers (power of 2).
+///
+/// Old element-based version was:
 ///   N_worker = floor(N / W)
-///   B = N_worker * 2^(L-2)
-///   wr = floor(log2(B)) - 1
-///   M = 4 * 2^wr = 2^(t + L - 1), where t = floor(log2 N_worker)
-///   P_layer = N_worker * chunk_size
-///   delta = P_layer mod M, then:
-///     if (P_layer + delta) / 2^wr ≡ 0 (mod 4) → +delta
-///     else                                    → -delta
-pub fn calculate_delta_per_worker(
-    batch_size: usize,
-    num_workers: usize,
-    chunk_size: usize,
-) -> isize {
+///   t = floor(log2(N_worker))
+///   M_elems = 2^(t + L - 1)
+///   P_layer = N_worker * 2^L
+///   delta_elems = P_layer mod M_elems, with sign rule:
+///       if delta_elems == M_elems/2 -> +delta_elems
+///       else                         -> -delta_elems
+///
+/// Dividing by 2^L (chunk_size), this simplifies in *chunks* to:
+///   M_chunks = 2^(t-1)
+///   delta_chunks_base = N_worker mod M_chunks
+///   if delta_chunks_base == 0      -> 0
+///   else if delta_chunks_base == M_chunks/2 -> +delta_chunks_base
+///   else                           -> -delta_chunks_base
+pub fn calculate_delta_per_worker(batch_size: usize, num_workers: usize) -> isize {
     assert!(num_workers > 0 && num_workers.is_power_of_two());
-    assert!(chunk_size > 0 && chunk_size.is_power_of_two());
 
     // N_worker = floor(N / W)
     let n_worker = batch_size / num_workers;
@@ -1089,97 +1090,93 @@ pub fn calculate_delta_per_worker(
         return 0;
     }
 
-    // L = log2(chunk_size)
-    let L = chunk_size.trailing_zeros() as u32;
-
     // t = floor(log2(N_worker))
     let t = (usize::BITS - 1 - n_worker.leading_zeros()) as u32;
 
-    // M = 2^(t + L - 1)
-    let m_exp = t + L - 1;
-    assert!(m_exp < 127, "exponent too large for u128");
-    let M: u128 = 1u128 << m_exp;
-    let mask: u128 = M - 1;
+    // For t == 0 or 1, the original element-wise delta is always 0.
+    if t <= 1 {
+        return 0;
+    }
 
-    // P_layer = N_worker * chunk_size
-    let p_layer: u128 = (n_worker as u128) * (chunk_size as u128);
-
-    // base delta (in elements)
-    let delta_base: u128 = p_layer & mask; // P_layer mod M
+    let m_chunks: usize = 1usize << (t - 1); // 2^(t-1)
+    let delta_base: usize = n_worker % m_chunks; // in chunks
 
     if delta_base == 0 {
         return 0;
     }
 
-    let half_M: u128 = M >> 1;
+    let half: usize = m_chunks >> 1; // 2^(t-2)
 
-    // Check +delta branch:
-    // ((P_layer + delta) / 2^wr) mod 4 == 0  <=>  P_layer + delta ≡ 0 mod M
-    // which holds iff delta ≡ (-P_layer) mod M. Our candidate delta_base already
-    // satisfies P_layer + delta_base ≡ 0 mod M, so +delta is valid iff delta_base == M/2.
-    if delta_base == half_M {
-        delta_base as isize // use +delta
+    if delta_base == half {
+        delta_base as isize // +delta
     } else {
-        -(delta_base as isize) // fall back to -delta
+        -(delta_base as isize) // -delta
     }
 }
 
 /// Given:
 /// - num_memories = M (each memory = 2 chunks),
 /// - num_workers = W (power of 2),
-/// - chunk_size = C (elements per chunk, power of 2),
-/// split the big polynomial [0 .. 2*M*C) among workers like in your example,
-/// and return which memories this `worker_idx` touches plus the shared `delta`.
+/// split the big polynomial [0 .. 2*M chunks) among workers using the delta trick,
+/// and return which memories this `worker_idx` touches.
+///
+/// The big poly is in *chunks*:
+///   N = 2 * M
+///   N_worker = floor(N / W)
+///   delta_chunks = calculate_delta_per_worker(N, W)
+/// Non-last workers get `base_len_chunks = N_worker + delta_chunks` chunks;
+/// last worker gets the remainder.
+/// A memory i occupies chunks [2*i, 2*i + 2).
 pub fn read_write_memories_for_worker(
     num_memories: usize,
-    chunk_size: usize,
     num_workers: usize,
     worker_idx: usize,
-) -> (Vec<usize>, isize) {
+) -> Vec<usize> {
     assert!(num_memories > 0);
     assert!(num_workers > 0 && num_workers.is_power_of_two());
-    assert!(chunk_size > 0 && chunk_size.is_power_of_two());
     assert!(worker_idx < num_workers);
 
     // Total chunks and per-worker baseline
     let n_chunks = 2 * num_memories; // N = M * 2
     let n_worker = n_chunks / num_workers; // floor(N/W)
+    assert!(n_worker > 0, "not enough chunks per worker");
 
-    // Shared delta in *elements*
-    let delta = calculate_delta_per_worker(n_chunks, num_workers, chunk_size);
+    // Shared delta in *chunks*
+    let delta_chunks = calculate_delta_per_worker(n_chunks, num_workers);
 
-    // Length (in elements) of a non-last worker's portion
-    let base_len = (n_worker as isize * chunk_size as isize + delta) as usize;
-    assert!(base_len > 0, "non-last worker chunk_len must be positive");
+    // Length (in chunks) of a non-last worker's portion
+    let base_len_chunks = (n_worker as isize + delta_chunks) as usize;
+    assert!(
+        base_len_chunks > 0,
+        "non-last worker chunk_len must be positive"
+    );
 
-    // Total elements in the full poly
-    let total_elems = n_chunks * chunk_size;
+    let total_chunks = n_chunks;
 
-    // Compute this worker's element range [start, end)
-    let (start_elem, end_elem) = if worker_idx + 1 < num_workers {
-        let start = base_len * worker_idx;
-        let end = start + base_len;
+    // Compute this worker's chunk range [start_chunk, end_chunk)
+    let (start_chunk, end_chunk) = if worker_idx + 1 < num_workers {
+        let start = base_len_chunks * worker_idx;
+        let end = start + base_len_chunks;
         (start, end)
     } else {
         // last worker gets the remainder
-        let start = base_len * (num_workers - 1);
-        let end = total_elems;
+        let start = base_len_chunks * (num_workers - 1);
+        let end = total_chunks;
         (start, end)
     };
 
-    // Each memory i occupies [i * 2*C, i * 2*C + 2*C)
-    let mem_span = 2 * chunk_size;
+    // Each memory i occupies chunks [2*i, 2*i + 2)
     let mut memories = Vec::new();
     for mem_idx in 0..num_memories {
-        let mem_start = mem_idx * mem_span;
-        let mem_end = mem_start + mem_span;
-        // non-empty intersection with [start_elem, end_elem)
-        if mem_start < end_elem && mem_end > start_elem {
+        let mem_start = 2 * mem_idx;
+        let mem_end = mem_start + 2;
+        // non-empty intersection with [start_chunk, end_chunk)
+        if mem_start < end_chunk && mem_end > start_chunk {
             memories.push(mem_idx);
         }
     }
 
-    (memories, delta)
+    memories
 }
 
 /// For a given worker, return a sequence of "segments" in the global memory layout:
@@ -1187,19 +1184,29 @@ pub fn read_write_memories_for_worker(
 ///   or `None` if it only owns some memories from that subtable.
 /// - `Vec<usize>` are the memory indices (from subtable_to_memory_indices) that fall into this
 ///   worker's polynomial slice.
+///
+/// Layout in *blocks/chunks*:
+///   for each subtable i:
+///       [header_block] + [mem_block_0] + [mem_block_1] + ...
+///
+/// Splitting:
+///   B = total_blocks
+///   N = B
+///   N_worker = floor(N / num_workers)
+///   delta_chunks = calculate_delta_per_worker(N, num_workers)
+///   non-last workers:  len_chunks = N_worker + delta_chunks
+///   last worker:        len_chunks = N - len_chunks * (num_workers - 1)
+///
+/// A header of subtable i is at block index `pref[i]`.
+/// A memory j in subtable i is at block index `pref[i] + 1 + j`.
 pub fn init_final_subtables_for_worker(
     subtable_to_memory_indices: &[Vec<usize>],
-    chunk_size: usize,  // e.g., 1 << 16
     num_workers: usize, // power of two
     worker_idx: usize,
 ) -> Vec<(Option<usize>, Vec<usize>)> {
     assert!(
         num_workers > 0 && num_workers.is_power_of_two(),
         "num_workers must be power of two"
-    );
-    assert!(
-        chunk_size > 0 && chunk_size.is_power_of_two(),
-        "chunk_size must be power of two"
     );
     assert!(worker_idx < num_workers, "worker_idx out of bounds");
 
@@ -1212,39 +1219,32 @@ pub fn init_final_subtables_for_worker(
     let total_blocks = *pref.last().unwrap(); // B == N
     assert!(total_blocks > 0, "no blocks to allocate");
 
-    // N = total_blocks (one chunk per block)
-    let batch_size = total_blocks;
+    let batch_size = total_blocks; // N
     let n_worker = batch_size / num_workers; // floor(N / W)
     assert!(n_worker > 0, "not enough blocks per worker");
 
-    // delta in *elements* (multiple of chunk_size), same as before
-    let delta_elems = calculate_delta_per_worker(batch_size, num_workers, chunk_size);
+    // delta in *chunks/blocks*
+    let delta_chunks = calculate_delta_per_worker(batch_size, num_workers);
+
+    // Length of a non-last worker's slice, in blocks.
+    let base_len_chunks = (n_worker as isize + delta_chunks) as usize;
     assert!(
-        delta_elems % (chunk_size as isize) == 0,
-        "delta must be multiple of chunk_size"
+        base_len_chunks > 0,
+        "non-last worker slice must be positive"
     );
 
-    // Length of a non-last worker's slice, in elements.
-    let base_len_elems = (n_worker as isize * chunk_size as isize + delta_elems) as usize;
-    assert!(base_len_elems > 0, "non-last worker slice must be positive");
+    let total_chunks = batch_size; // one chunk per block
 
-    // Total elements in the full polynomial.
-    let total_elems = batch_size * chunk_size;
-
-    // Element range [start_elem, end_elem) for this worker (unchanged from working version).
-    let (start_elem, end_elem) = if worker_idx + 1 < num_workers {
-        let start = base_len_elems * worker_idx;
-        let end = start + base_len_elems;
+    // Chunk range [start_chunk, end_chunk) for this worker.
+    let (start_chunk, end_chunk) = if worker_idx + 1 < num_workers {
+        let start = base_len_chunks * worker_idx;
+        let end = start + base_len_chunks;
         (start, end)
     } else {
-        let start = base_len_elems * (num_workers - 1);
-        let end = total_elems;
+        let start = base_len_chunks * (num_workers - 1);
+        let end = total_chunks;
         (start, end)
     };
-
-    assert!(start_elem % chunk_size == 0 && end_elem % chunk_size == 0);
-    let start_chunk = start_elem / chunk_size;
-    let end_chunk = end_elem / chunk_size;
 
     // Map chunk interval [start_chunk, end_chunk) back to per-subtable segments.
     let mut out: Vec<(Option<usize>, Vec<usize>)> = Vec::new();
@@ -1383,18 +1383,16 @@ fn test_memories_allocation() {
     let mut init_final_workers = vec![vec![]; W];
 
     for w in 0..W {
-        let (worker_rw_memories, delta) =
-            read_write_memories_for_worker(NUM_MEMORIES, chunk_size, W, w);
+        let worker_rw_memories = read_write_memories_for_worker(NUM_MEMORIES, W, w);
         let w_chunk_len = worker_rw_memories.len() * 2 * chunk_size;
 
-        // println!(
-        //     "worker {} read_write_memories [{}]: {:?} delta: {} w_chunk_len: {}",
-        //     w,
-        //     worker_rw_memories.len(),
-        //     worker_rw_memories,
-        //     delta,
-        //     w_chunk_len
-        // );
+        println!(
+            "worker {} read_write_memories [{}]: {:?} w_chunk_len: {}",
+            w,
+            worker_rw_memories.len(),
+            worker_rw_memories,
+            w_chunk_len
+        );
         read_write_workers[w] = worker_rw_memories
             .into_iter()
             .flat_map(|memory_index| {
@@ -1413,7 +1411,7 @@ fn test_memories_allocation() {
         println!("---------");
 
         let worker_memories_for_subtables =
-            init_final_subtables_for_worker(&subtable_to_memory_indices, M, W, w);
+            init_final_subtables_for_worker(&subtable_to_memory_indices, W, w);
         let final_memories = worker_memories_for_subtables
             .iter()
             .flat_map(|(_, memories)| memories)
@@ -1561,8 +1559,8 @@ fn run_simulation_dbgp_batch_wize<F: JoltField>(
     //     );
     // }
 
-    let worker_num_layers = num_layers - 2 - 1;
-    let coordinator_num_layers = 1 + 1;
+    let worker_num_layers = num_layers - 2;
+    let coordinator_num_layers = 1;
     println!(
         "worker layers: {} coordinator layers: {}",
         worker_num_layers, coordinator_num_layers
@@ -1703,7 +1701,7 @@ fn run_simulation_dbgp_batch_wize<F: JoltField>(
 
     println!("\n/------------ Worker prover ------------/");
 
-    let mut batch_size_per_worker = 2 * N_worker;
+    let mut batch_size_per_worker = N_worker;
     for mut layer in worker_layers.iter().cloned().rev() {
         // println!(
         //     "layer {} rounds: {:?} polys: {:?}",
@@ -2486,7 +2484,7 @@ fn debug_workers_data<F: JoltField>(chunk_size: usize, N: usize, W: usize) -> Ve
 
     let mut w_interleaved = vec![vec![]; W];
     let mut leaves = in_interleaved.clone();
-    let delta = calculate_delta_per_worker(N, W, chunk_size);
+    let delta = calculate_delta_per_worker(N, W) * chunk_size as isize;
     println!("batch_size_worker: {} delta: {}", N_worker, delta);
     for w in 0..W {
         let mut w_chunk_len = ((chunk_size * N_worker) as isize + delta) as usize;
