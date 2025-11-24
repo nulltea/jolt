@@ -616,9 +616,9 @@ impl<F: JoltField, ProofTranscript: Transcript> SumcheckInstanceProof<F, ProofTr
 
             eq_chunk_worker /= 2;
 
-            println!("-------");
-            println!("eval points: {:?}", eval_points);
-            println!("--------------");
+            // println!("-------");
+            // println!("eval points: {:?}", eval_points);
+            // println!("--------------");
 
             eval_points.insert(1, previous_claim - eval_points[0]);
             let univariate_poly = UniPoly::from_evals(&eval_points);
@@ -1182,55 +1182,47 @@ pub fn read_write_memories_for_worker(
     (memories, delta)
 }
 
-/// For a given worker, return which memories (grouped by subtable) fall into its
-/// polynomial slice, when the full poly is built as:
-///   for each subtable:
-///       [header_chunk] + [mem_chunk_0] + [mem_chunk_1] + ...
-/// Each chunk has `chunk_size` elements.
-/// Splitting is *by elements* using the delta trick:
-///   - N_blocks = total headers + total memories
-///   - N_chunks = N_blocks  (1 chunk per block)
-///   - All workers except last get len = N_worker * chunk_size + delta elements
-///   - Last worker gets the remaining elements.
-/// A memory’s chunk may be split between workers; we assign the memory to a worker
-/// iff that worker’s element range intersects that memory’s chunk.
+/// For a given worker, return a sequence of "segments" in the global memory layout:
+/// - `Option<usize>` is `Some(subtable_idx)` if the worker owns the header block of that subtable,
+///   or `None` if it only owns some memories from that subtable.
+/// - `Vec<usize>` are the memory indices (from subtable_to_memory_indices) that fall into this
+///   worker's polynomial slice.
 pub fn init_final_subtables_for_worker(
     subtable_to_memory_indices: &[Vec<usize>],
-    chunk_size: usize,  // e.g. 1 << 16
+    chunk_size: usize,  // e.g., 1 << 16
     num_workers: usize, // power of two
     worker_idx: usize,
-) -> (
-    Vec<(usize /*subtable_idx*/, Vec<usize> /*memories*/)>,
-    isize, /*delta*/
-) {
-    assert!(num_workers > 0 && num_workers.is_power_of_two());
-    assert!(chunk_size > 0 && chunk_size.is_power_of_two());
-    assert!(worker_idx < num_workers);
+) -> Vec<(Option<usize>, Vec<usize>)> {
+    assert!(
+        num_workers > 0 && num_workers.is_power_of_two(),
+        "num_workers must be power of two"
+    );
+    assert!(
+        chunk_size > 0 && chunk_size.is_power_of_two(),
+        "chunk_size must be power of two"
+    );
+    assert!(worker_idx < num_workers, "worker_idx out of bounds");
 
-    // Build prefix sums in *block* space: each subtable contributes
-    // 1 header block + len(subtable) memory blocks.
+    // Prefix sums in *block* space: each subtable contributes 1 header + |st| memory blocks.
     let mut pref = Vec::with_capacity(subtable_to_memory_indices.len() + 1);
     pref.push(0usize);
     for st in subtable_to_memory_indices {
         pref.push(pref.last().copied().unwrap() + 1 + st.len());
     }
-    let total_blocks = *pref.last().unwrap();
-    if total_blocks == 0 {
-        panic!("No blocks to process")
-    }
+    let total_blocks = *pref.last().unwrap(); // B == N
+    assert!(total_blocks > 0, "no blocks to allocate");
 
-    // Total "chunks" = total_blocks (1 chunk per block).
-    let batch_size = total_blocks; // N
-    assert!(
-        batch_size >= num_workers,
-        "not enough blocks to sensibly split across workers"
-    );
+    // N = total_blocks (one chunk per block)
+    let batch_size = total_blocks;
+    let n_worker = batch_size / num_workers; // floor(N / W)
+    assert!(n_worker > 0, "not enough blocks per worker");
 
-    // N_worker = floor(N / W)
-    let n_worker = batch_size / num_workers;
-
-    // Delta in *elements* (may be positive or negative).
+    // delta in *elements* (multiple of chunk_size), same as before
     let delta_elems = calculate_delta_per_worker(batch_size, num_workers, chunk_size);
+    assert!(
+        delta_elems % (chunk_size as isize) == 0,
+        "delta must be multiple of chunk_size"
+    );
 
     // Length of a non-last worker's slice, in elements.
     let base_len_elems = (n_worker as isize * chunk_size as isize + delta_elems) as usize;
@@ -1239,7 +1231,7 @@ pub fn init_final_subtables_for_worker(
     // Total elements in the full polynomial.
     let total_elems = batch_size * chunk_size;
 
-    // Element range [start_elem, end_elem) for this worker.
+    // Element range [start_elem, end_elem) for this worker (unchanged from working version).
     let (start_elem, end_elem) = if worker_idx + 1 < num_workers {
         let start = base_len_elems * worker_idx;
         let end = start + base_len_elems;
@@ -1250,51 +1242,56 @@ pub fn init_final_subtables_for_worker(
         (start, end)
     };
 
-    // Map that element interval back to per-subtable memories.
-    // Block k corresponds to element range [k * chunk_size, (k + 1) * chunk_size).
-    // For subtable i:
-    //   header block index = pref[i]
-    //   memory j (0..st.len()) block index = pref[i] + 1 + j
-    let mut out: Vec<(usize, Vec<usize>)> = Vec::new();
+    assert!(start_elem % chunk_size == 0 && end_elem % chunk_size == 0);
+    let start_chunk = start_elem / chunk_size;
+    let end_chunk = end_elem / chunk_size;
+
+    // Map chunk interval [start_chunk, end_chunk) back to per-subtable segments.
+    let mut out: Vec<(Option<usize>, Vec<usize>)> = Vec::new();
 
     for (i, st) in subtable_to_memory_indices.iter().enumerate() {
         let st_beg_block = pref[i];
         let st_end_block = pref[i + 1];
-        // If even the header is beyond this worker's range, we can break.
-        let st_beg_elem = st_beg_block * chunk_size;
-        if st_beg_elem >= end_elem {
-            break;
+
+        if st_beg_block >= end_chunk {
+            break; // past this worker's range
+        }
+        if st_end_block <= start_chunk {
+            continue; // entirely before this worker's range
         }
 
-        let mut mems_for_worker = Vec::new();
-        let mems_beg_block = st_beg_block + 1;
-        for (j, &mem_id) in st.iter().enumerate() {
-            let block_idx = mems_beg_block + j;
-            let block_start = block_idx * chunk_size;
-            let block_end = block_start + chunk_size;
+        // Header block index
+        let header_block = st_beg_block;
+        let header_in_range = header_block >= start_chunk && header_block < end_chunk;
 
-            if block_start >= end_elem {
-                break; // no further mems from this subtable can intersect
+        // Memory blocks
+        let mems_beg_block = st_beg_block + 1;
+        let mut mems_for_worker = Vec::new();
+
+        for (j, &mem_id) in st.iter().enumerate() {
+            let blk = mems_beg_block + j;
+            if blk >= end_chunk {
+                break; // remaining mems from this subtable are beyond this worker
             }
-            if block_end > start_elem {
-                // Non-empty intersection with worker's [start_elem, end_elem)
+            if blk >= start_chunk {
                 mems_for_worker.push(mem_id);
             }
         }
 
-        if !mems_for_worker.is_empty() {
-            out.push((i, mems_for_worker));
+        // Include subtable if either header or at least one memory is in range.
+        if header_in_range || !mems_for_worker.is_empty() {
+            let header_tag = if header_in_range { Some(i) } else { None };
+            out.push((header_tag, mems_for_worker));
         }
     }
 
-    (out, delta_elems)
+    out
 }
 
 #[test]
 fn test_memories_allocation() {
     type F = ark_bn254::Fr;
     const NUM_MEMORIES: usize = 51;
-    const M: usize = 1 << 16;
 
     let chunk_size: usize = env::var("CHUNK_SIZE")
         .unwrap_or_else(|_| "8".to_string())
@@ -1306,6 +1303,11 @@ fn test_memories_allocation() {
         .parse()
         .unwrap();
 
+    let M: usize = env::var("M")
+        .unwrap_or_else(|_| "65536".to_string())
+        .parse()
+        .unwrap();
+
     assert!(
         chunk_size.is_power_of_two(),
         "chunk_size must be a power of two"
@@ -1313,20 +1315,6 @@ fn test_memories_allocation() {
     assert!(W.is_power_of_two(), "num_workers must be a power of two");
 
     println!("NUM_WORKERS={} | CHUNK_SIZE={}", W, chunk_size);
-
-    let W_log2 = W.log_2();
-    // let leaves_len = chunk_size * N;
-    // let num_layers = (leaves_len / N).log_2();
-    // println!("num_layers: {}", num_layers);
-
-    let N_rw = NUM_MEMORIES * 2;
-
-    // let mut in_read_write = vec![];
-
-    // for i in 1..N_rw + 1 {
-    //     in_read_write.extend(vec![F::from(i as u64); chunk_size]);
-    // }
-    // println!("in_interleaved: {:?}", in_interleaved);
 
     let subtable_to_memory_indices: Vec<Vec<usize>> = vec![
         vec![0, 1, 2, 3],
@@ -1399,14 +1387,14 @@ fn test_memories_allocation() {
             read_write_memories_for_worker(NUM_MEMORIES, chunk_size, W, w);
         let w_chunk_len = worker_rw_memories.len() * 2 * chunk_size;
 
-        println!(
-            "worker {} read_write_memories [{}]: {:?} delta: {} w_chunk_len: {}",
-            w,
-            worker_rw_memories.len(),
-            worker_rw_memories,
-            delta,
-            w_chunk_len
-        );
+        // println!(
+        //     "worker {} read_write_memories [{}]: {:?} delta: {} w_chunk_len: {}",
+        //     w,
+        //     worker_rw_memories.len(),
+        //     worker_rw_memories,
+        //     delta,
+        //     w_chunk_len
+        // );
         read_write_workers[w] = worker_rw_memories
             .into_iter()
             .flat_map(|memory_index| {
@@ -1418,13 +1406,13 @@ fn test_memories_allocation() {
                     .map(|read_fingerprint| *read_fingerprint + F::ONE)
                     .collect();
 
-                [read_fingerprints, write_fingerprints]
+                [read_fingerprints, write_fingerprints].concat()
             })
             .collect::<Vec<_>>();
 
         println!("---------");
 
-        let (worker_memories_for_subtables, delta) =
+        let worker_memories_for_subtables =
             init_final_subtables_for_worker(&subtable_to_memory_indices, M, W, w);
         let final_memories = worker_memories_for_subtables
             .iter()
@@ -1432,27 +1420,25 @@ fn test_memories_allocation() {
             .copied()
             .collect_vec();
         println!(
-            "worker {} memories_for_subtables [{}]: {:?} delta: {}",
+            "worker {} memories_for_subtables [{}]: {:?}",
             w,
             final_memories.len(),
-            worker_memories_for_subtables,
-            delta
+            worker_memories_for_subtables
         );
 
         init_final_workers[w] = worker_memories_for_subtables
             .into_iter()
             .flat_map(|(subtable_index, memories)| {
-                let has_init = subtable_to_memory_indices[subtable_index][0] == memories[0];
-                let subtable = &materialized_subtables[subtable_index];
+                let subtable = subtable_index.map(|si| &materialized_subtables[si]);
                 let mut leaves_len = M * memories.len();
-                if has_init {
+                if subtable.is_some() {
                     leaves_len += M;
                 }
                 let mut leaves = vec![F::ZERO; leaves_len];
                 let mut leaf_index = 0;
 
                 // Init leaves
-                if has_init {
+                if let Some(subtable) = subtable {
                     (0..M).for_each(|i| {
                         leaves[i] = subtable[i];
                     });
@@ -1482,12 +1468,15 @@ fn test_memories_allocation() {
     // }
 
     assert_eq!(
-        read_write_workers
-            .iter()
-            .map(|wp| wp.iter().flatten().collect_vec().len())
-            .sum::<usize>(),
-        102 * chunk_size
+        read_write_workers.iter().map(|wp| wp.len()).sum::<usize>(),
+        NUM_MEMORIES * 2 * chunk_size
     );
+
+    println!("/--------------- READ_WRITE ---------------/");
+
+    run_simulation_dbgp_batch_wize(chunk_size, NUM_MEMORIES * 2, W, read_write_workers);
+
+    println!("/------------------------------------------/");
 
     // for worker_index in 0..W {
     //     println!(
@@ -1500,10 +1489,21 @@ fn test_memories_allocation() {
         init_final_workers.iter().map(|wp| wp.len()).sum::<usize>(),
         75 * M
     );
+
+    println!("/--------------- INIT_FINAL ---------------/");
+
+    run_simulation_dbgp_batch_wize(M, 75, W, init_final_workers);
+
+    println!("/------------------------------------------/");
 }
 
 #[cfg(test)]
-fn run_simulation_dbgp_batch_wize<F: JoltField>(chunk_size: usize, N: usize, W: usize) {
+fn run_simulation_dbgp_batch_wize<F: JoltField>(
+    chunk_size: usize,
+    N: usize,
+    W: usize,
+    w_interleaved: Vec<Vec<F>>,
+) {
     assert!(
         chunk_size.is_power_of_two(),
         "chunk_size must be a power of two"
@@ -1516,17 +1516,17 @@ fn run_simulation_dbgp_batch_wize<F: JoltField>(chunk_size: usize, N: usize, W: 
         W, chunk_size, N, N_worker
     );
 
-    let W_log2 = W.log_2();
-    let leaves_len = chunk_size * N;
-    let num_layers = (leaves_len / N).log_2();
-    println!("num_layers: {}", num_layers);
-
     let mut in_interleaved = vec![];
 
     for i in 1..N + 1 {
         in_interleaved.extend(vec![F::from(i as u64); chunk_size]);
     }
-    println!("in_interleaved: {:?}", in_interleaved);
+    // println!("in_interleaved: {:?}", in_interleaved);
+
+    let W_log2 = W.log_2();
+    let leaves_len = chunk_size * N;
+    let num_layers = (leaves_len / N).log_2();
+    println!("num_layers: {}", num_layers);
 
     #[derive(Debug, Clone)]
     struct LayerCircuit<F: JoltField> {
@@ -1542,31 +1542,6 @@ fn run_simulation_dbgp_batch_wize<F: JoltField>(chunk_size: usize, N: usize, W: 
 
     println!("\n/---------- Construct layers ----------/");
 
-    let mut w_interleaved = vec![vec![]; W];
-    let mut leaves = in_interleaved.clone();
-    let delta = calculate_delta_per_worker(N, W, chunk_size);
-    println!("batch_size_worker: {} delta: {}", N_worker, delta);
-    let num_memories = 51;
-    for w in 0..W {
-        let (worker_memories, _delta) =
-            read_write_memories_for_worker(num_memories, chunk_size, W, w);
-        println!(
-            "worker_memories [{}]: {:?} delta: {}",
-            worker_memories.len(),
-            worker_memories,
-            _delta
-        );
-
-        let mut w_chunk_len = ((chunk_size * N_worker) as isize + delta) as usize;
-        if w == W - 1 {
-            w_chunk_len = N * chunk_size - w_chunk_len * (W - 1);
-        };
-        println!("worker: {} w_chunk_len: {}", w, w_chunk_len);
-
-        w_interleaved[w] = leaves.drain(0..w_chunk_len).collect();
-    }
-    assert!(leaves.is_empty());
-
     let input_layer = LayerCircuit {
         layer_idx: num_layers,
         polys: w_interleaved
@@ -1576,15 +1551,15 @@ fn run_simulation_dbgp_batch_wize<F: JoltField>(chunk_size: usize, N: usize, W: 
             .collect(),
     };
 
-    println!(
-        "input layer ({}) | polys: {:?}",
-        input_layer.layer_idx,
-        input_layer
-            .polys
-            .iter()
-            .map(|p| &p.coeffs)
-            .collect::<Vec<_>>()
-    );
+    // for w in 0..W {
+    //     println!(
+    //         "worker {} input layer ({}) | polys [{}]: {:?}",
+    //         w,
+    //         input_layer.layer_idx,
+    //         input_layer.polys[w].len(),
+    //         input_layer.polys[w].coeffs
+    //     );
+    // }
 
     let worker_num_layers = num_layers - 2 - 1;
     let coordinator_num_layers = 1 + 1;
@@ -1604,11 +1579,11 @@ fn run_simulation_dbgp_batch_wize<F: JoltField>(chunk_size: usize, N: usize, W: 
             .par_iter()
             .map(DenseInterleavedPolynomial::layer_output)
             .collect::<Vec<_>>();
-        println!(
-            "worker layer {} | out: {:?}",
-            layer_idx,
-            polys.iter().map(|p| &p.coeffs).collect::<Vec<_>>()
-        );
+        // println!(
+        //     "worker layer {} | out: {:?}",
+        //     layer_idx,
+        //     polys.iter().map(|p| &p.coeffs).collect::<Vec<_>>()
+        // );
         println!("-------------");
 
         let next_layer = LayerCircuit { layer_idx, polys };
@@ -1640,11 +1615,11 @@ fn run_simulation_dbgp_batch_wize<F: JoltField>(chunk_size: usize, N: usize, W: 
                 .collect::<Vec<_>>();
 
             println!("-------------");
-            println!(
-                "worker layer {} | next_layer_coeffs: {:?}",
-                num_layers - worker_num_layers,
-                next_layer_coeffs
-            );
+            // println!(
+            //     "worker layer {} | next_layer_coeffs: {:?}",
+            //     num_layers - worker_num_layers,
+            //     next_layer_coeffs
+            // );
             switched = true;
             DenseInterleavedPolynomial::new(next_layer_coeffs)
         } else {
@@ -2493,6 +2468,39 @@ fn test_local_gkr_simulation() {
     );
 }
 
+#[cfg(test)]
+fn debug_workers_data<F: JoltField>(chunk_size: usize, N: usize, W: usize) -> Vec<Vec<F>> {
+    assert!(
+        chunk_size.is_power_of_two(),
+        "chunk_size must be a power of two"
+    );
+    assert!(W.is_power_of_two(), "num_workers must be a power of two");
+    let N_worker = N / W; // floor(N / W)
+
+    let mut in_interleaved = vec![];
+
+    for i in 1..N + 1 {
+        in_interleaved.extend(vec![F::from(i as u64); chunk_size]);
+    }
+    println!("in_interleaved: {:?}", in_interleaved);
+
+    let mut w_interleaved = vec![vec![]; W];
+    let mut leaves = in_interleaved.clone();
+    let delta = calculate_delta_per_worker(N, W, chunk_size);
+    println!("batch_size_worker: {} delta: {}", N_worker, delta);
+    for w in 0..W {
+        let mut w_chunk_len = ((chunk_size * N_worker) as isize + delta) as usize;
+        if w == W - 1 {
+            w_chunk_len = N * chunk_size - w_chunk_len * (W - 1);
+        };
+        println!("worker: {} w_chunk_len: {}", w, w_chunk_len);
+
+        w_interleaved[w] = leaves.drain(0..w_chunk_len).collect();
+    }
+    assert!(leaves.is_empty());
+    w_interleaved
+}
+
 #[test]
 fn test_distributed_gkr_simulation() {
     let chunk_size: usize = env::var("CHUNK_SIZE")
@@ -2508,7 +2516,8 @@ fn test_distributed_gkr_simulation() {
         .parse()
         .unwrap();
 
-    run_simulation_dbgp_batch_wize::<ark_bn254::Fr>(chunk_size, N, W);
+    let w_interleaved = debug_workers_data(chunk_size, N, W);
+    run_simulation_dbgp_batch_wize::<ark_bn254::Fr>(chunk_size, N, W, w_interleaved);
 }
 
 #[test]
@@ -2531,7 +2540,9 @@ fn test_cases_distributed_gkr_simulation() {
     ];
     for (chunk_size, N) in cases {
         println!("/------------ Test case start ------------/");
-        run_simulation_dbgp_batch_wize::<ark_bn254::Fr>(chunk_size, N, W);
+        let w_interleaved = debug_workers_data(chunk_size, N, W);
+
+        run_simulation_dbgp_batch_wize::<ark_bn254::Fr>(chunk_size, N, W, w_interleaved);
         println!("/-----------------------------------------/");
     }
 }

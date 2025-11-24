@@ -343,9 +343,9 @@ impl<F: JoltField, ProofTranscript: Transcript> BatchedCubicSumcheck<F, ProofTra
                 )
         };
 
-        println!("-------");
-        println!("cubic_evals: {:?}", cubic_evals);
-        println!("--------------");
+        // println!("-------");
+        // println!("cubic_evals: {:?}", cubic_evals);
+        // println!("--------------");
 
         let cubic_evals = [
             cubic_evals.0,
