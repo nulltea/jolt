@@ -227,26 +227,17 @@ impl<F: JoltField> GruenSplitEqPolynomial<F> {
 impl<F: JoltField> SplitEqPolynomial<F> {
     #[tracing::instrument(skip_all, name = "SplitEqPolynomial::new", level = "trace")]
     pub fn new(w: &[F]) -> Self {
-        // let m = w.len() / 2;
-        // let (w2, w1) = w.split_at(m);
-        // let (E2, E1) = rayon::join(|| EqPolynomial::evals(w2), || EqPolynomial::evals(w1));
-        // let E1_len = E1.len();
-        // let E2_len = E2.len();
-        // Self {
-        //     num_vars: w.len(),
-        //     E1,
-        //     E1_len,
-        //     E2,
-        //     E2_len,
-        // }
-
-        let E2 = EqPolynomial::evals(w);
+        let m = w.len() / 2;
+        let (w2, w1) = w.split_at(m);
+        let (E2, E1) = rayon::join(|| EqPolynomial::evals(w2), || EqPolynomial::evals(w1));
+        let E1_len = E1.len();
+        let E2_len = E2.len();
         Self {
             num_vars: w.len(),
-            E1: vec![F::ZERO],
-            E1_len: 1,
-            E2_len: E2.len(),
+            E1,
+            E1_len,
             E2,
+            E2_len,
         }
     }
 
@@ -266,7 +257,127 @@ impl<F: JoltField> SplitEqPolynomial<F> {
         }
     }
 
+    #[tracing::instrument(
+        skip_all,
+        name = "SplitEqPolynomial::new_chunk_custom",
+        level = "trace"
+    )]
     pub fn new_chunk_custom(w: &[F], log_chunks: usize, k: usize, eq_pairs: usize) -> Self {
+        let n = w.len();
+        assert!(
+            log_chunks <= n,
+            "log_chunks cannot exceed number of variables"
+        );
+
+        // We reserve the last `log_chunks` variables for chunk selection (B).
+        let num_vars = n - log_chunks;
+        let total_rows = 1usize << n;
+        let num_workers = 1usize << log_chunks;
+
+        // Baseline chunk [offset, cutoff) in the *full* Eq table over all n variables.
+        let offset = eq_pairs.saturating_mul(k);
+        let cutoff = if k + 1 < num_workers {
+            core::cmp::min(offset + eq_pairs, total_rows)
+        } else {
+            total_rows
+        };
+        let length = cutoff.saturating_sub(offset);
+        assert!(length > 0, "empty eq chunk for worker");
+
+        // ---- Choose C (E1) size: A | C | B ----
+        // A  : first (num_vars - e1_vars) vars  (outer / per-worker)
+        // C  : next e1_vars vars                (E1, bound in worker)
+        // B  : last log_chunks vars             (chunk selector, never bound in worker)
+        //
+        // We want the *largest* e1_vars such that:
+        // - e1_vars <= num_vars - 2   (keep >= 2 vars in A∪B)
+        // - 2^e1_vars | eq_pairs      (all offsets = eq_pairs*k are aligned)
+        // - 2^e1_vars | length        (this worker’s chunk length is aligned)
+        // - 2^e1_vars | offset        (this worker’s starting row is aligned)
+        let max_e1_from_vars = num_vars.saturating_sub(2);
+        let mut e1_vars = core::cmp::min(
+            max_e1_from_vars,
+            core::cmp::min(
+                eq_pairs.trailing_zeros() as usize,
+                length.trailing_zeros() as usize,
+            ),
+        );
+
+        // additionally enforce offset alignment by possibly shrinking e1_vars
+        while e1_vars > 0 {
+            let blk = 1usize << e1_vars;
+            if offset % blk == 0 && length % blk == 0 {
+                break;
+            }
+            e1_vars -= 1;
+        }
+
+        // ---- Build E1 over C ----
+        let (E1, E1_len) = if e1_vars == 0 {
+            // Trivial factorization: Eq = E2, no inner table.
+            (vec![F::one()], 1usize)
+        } else {
+            let e1_start = num_vars - e1_vars; // C starts here
+            let e1_slice = &w[e1_start..num_vars]; // C variables
+            let e1 = EqPolynomial::evals(e1_slice); // size 2^e1_vars
+            debug_assert_eq!(e1.len(), 1usize << e1_vars);
+            (e1, 1usize << e1_vars)
+        };
+
+        // ---- Build E2 over (A,B) only ----
+        //
+        // We drop C from the Eq table and keep only A and B:
+        //   w_e2_vars = A || B = w[0 .. num_vars - e1_vars] || w[num_vars .. n]
+        //
+        // Eq over (A,B) has 2^(n - e1_vars) rows and each row corresponds to
+        // a block of 2^e1_vars rows in the full Eq table (all assignments to C).
+        let a_len = num_vars - e1_vars;
+        let mut w_e2_vars = Vec::with_capacity(a_len + log_chunks);
+        // A
+        w_e2_vars.extend_from_slice(&w[0..a_len]);
+        // B
+        w_e2_vars.extend_from_slice(&w[num_vars..n]);
+
+        let full_E2 = EqPolynomial::evals(&w_e2_vars);
+
+        // Map full-table indices [offset, offset+length) to (A,B) rows:
+        // - if E1_len > 1: rows collapse in blocks of size E1_len = 2^e1_vars
+        // - if E1_len == 1: there is no C, so indices are used verbatim.
+        let (start_row, rows_needed) = if E1_len == 1 {
+            (offset, length)
+        } else {
+            (offset >> e1_vars, length >> e1_vars)
+        };
+        let end_row = core::cmp::min(start_row + rows_needed, full_E2.len());
+        let E2 = full_E2[start_row..end_row].to_vec();
+        let E2_len = E2.len();
+
+        // Sanity: our factored length matches the requested chunk length.
+        debug_assert!(
+            if E1_len == 1 {
+                E2_len == length
+            } else {
+                E1_len * E2_len == length
+            },
+            "E1_len * E2_len must equal chunk length"
+        );
+
+        let res = Self {
+            num_vars,
+            E1,
+            E1_len,
+            E2,
+            E2_len,
+        };
+
+        let check = Self::new_chunk_custom_hack(w, log_chunks, k, eq_pairs);
+
+        assert_eq!(res.merge().Z, check.merge().Z);
+
+        res
+    }
+
+    pub fn new_chunk_custom_hack(w: &[F], log_chunks: usize, k: usize, eq_pairs: usize) -> Self {
         let num_vars = w.len() - log_chunks;
         let rows = 1 << w.len();
         let offset = eq_pairs * k;
@@ -275,15 +386,8 @@ impl<F: JoltField> SplitEqPolynomial<F> {
         } else {
             rows
         };
-        println!(
-            "eq size {} worker {} offset {} cutoff {}",
-            1 << w.len(),
-            k,
-            offset,
-            cutoff
-        );
+        // Hack put entire chunk in E2
         let E2 = EqPolynomial::evals(w)[offset..cutoff].to_vec();
-        // E2.resize(1 << num_vars, F::ZERO);
 
         Self {
             num_vars,
@@ -346,7 +450,7 @@ impl<F: JoltField> SplitEqPolynomial<F> {
     // #[cfg(test)]
     pub fn merge(&self) -> DensePolynomial<F> {
         if self.E1_len == 1 {
-            DensePolynomial::new(self.E2[..self.E2_len].to_vec())
+            DensePolynomial::new_padded(self.E2[..self.E2_len].to_vec())
         } else {
             let mut merged = vec![];
             for i in 0..self.E2_len {
@@ -354,8 +458,244 @@ impl<F: JoltField> SplitEqPolynomial<F> {
                     merged.push(self.E2[i] * self.E1[j])
                 }
             }
-            DensePolynomial::new(merged)
+            DensePolynomial::new_padded(merged)
         }
+    }
+}
+
+pub struct DistributedSplitEqPolynomial<F> {
+    /// Number of variables *in this worker chunk* (A|C), excluding chunk bits B.
+    pub num_vars: usize,
+
+    // -------- factored rectangular part over A|C|B --------
+    //
+    // Same semantics as SplitEqPolynomial: Eq_rect(i_A, i_C, i_B) = E2(i_A, i_B) * E1(i_C)
+    pub E1: Vec<F>,
+    pub E1_len: usize, // = 2^{|C|} or 1
+    pub E2: Vec<F>,
+    pub E2_len: usize,
+
+    // -------- unfactored tail --------
+    //
+    // Tail is interpreted as a flat eq-eval vector, like the E2-part in the E1_len == 1 path.
+    // Tail length is arbitrary (non-power-of-two allowed).
+    pub E3: Vec<F>,
+}
+
+impl<F: JoltField> DistributedSplitEqPolynomial<F> {
+    pub fn new(w: &[F], log_chunks: usize, k: usize, eq_pairs: usize) -> Self {
+        let n = w.len();
+        assert!(
+            log_chunks <= n,
+            "log_chunks cannot exceed number of variables"
+        );
+
+        let num_vars = n - log_chunks;
+        let total_rows = 1usize << n;
+        let num_workers = 1usize << log_chunks;
+
+        // Global chunk [offset, cutoff) in the full Eq table over n variables.
+        let offset = eq_pairs.saturating_mul(k);
+        let cutoff = if k + 1 < num_workers {
+            core::cmp::min(offset + eq_pairs, total_rows)
+        } else {
+            total_rows
+        };
+        let length = cutoff.saturating_sub(offset);
+        assert!(length > 0, "empty eq chunk for worker");
+
+        // ---------------- choose e1_vars (C size) ----------------
+        //
+        // We want the largest e1_vars such that:
+        //  - e1_vars >= 1
+        //  - e1_vars <= num_vars
+        //  - 2^e1_vars <= length     (so we get at least one full C-block)
+        //  - offset % 2^e1_vars == 0 (chunk start aligned to C-blocks)
+        let max_e1_by_vars = num_vars;
+        let max_e1_by_length = usize::BITS as usize - (length.leading_zeros() as usize);
+        // max e1 with 2^e1 <= length:
+        let max_e1_by_length = max_e1_by_length.saturating_sub(1);
+        let mut e1_vars = core::cmp::min(max_e1_by_vars, max_e1_by_length);
+
+        while e1_vars > 0 {
+            let block = 1usize << e1_vars;
+            if offset % block == 0 {
+                break;
+            }
+            e1_vars -= 1;
+        }
+
+        // If we couldn't find any e1_vars >= 1 compatible with alignment/length,
+        // fall back to "no rectangular part": everything goes into tail, computed
+        // via direct flat Eq evaluation (no full-table instantiation).
+        if e1_vars == 0 {
+            let mut tail = Vec::with_capacity(length);
+            // Flat Eq evaluation: eq_w(x) = Π_i (x_i ? w_i : 1 - w_i).
+            for t in offset..cutoff {
+                let mut acc = F::ONE;
+                let mut idx = t;
+                for &wi in w {
+                    let bit = idx & 1;
+                    idx >>= 1;
+                    let term = if bit == 0 { F::ONE - wi } else { wi };
+                    acc *= term;
+                }
+                tail.push(acc);
+            }
+
+            return Self {
+                num_vars,
+                E1: vec![F::ONE], // unused
+                E1_len: 1,
+                E2: Vec::new(),
+                E2_len: 0,
+                E3: tail,
+            };
+        }
+
+        let E1_len = 1usize << e1_vars;
+
+        // ---------------- build E1 over C ----------------
+        let c_start = num_vars - e1_vars;
+        let E1 = EqPolynomial::evals(&w[c_start..num_vars]);
+        debug_assert_eq!(E1.len(), E1_len);
+
+        // ---------------- build full E2 over (A,B) ----------------
+        //
+        // w_e2_vars = A || B
+        let a_len = num_vars - e1_vars;
+        let mut w_e2_vars = Vec::with_capacity(a_len + log_chunks);
+        // A
+        w_e2_vars.extend_from_slice(&w[0..a_len]);
+        // B
+        w_e2_vars.extend_from_slice(&w[num_vars..n]);
+
+        let full_E2 = EqPolynomial::evals(&w_e2_vars);
+        let full_e2_len = 1usize << (n - e1_vars);
+        debug_assert_eq!(full_E2.len(), full_e2_len);
+
+        // ---------------- rectangle from the chunk prefix ----------------
+        let rect_rows = length / E1_len;
+        let rect_len = rect_rows * E1_len;
+        let tail_len = length - rect_len;
+
+        let e2_start = offset >> e1_vars;
+        let e2_end = e2_start + rect_rows;
+        debug_assert!(e2_end <= full_E2.len());
+
+        let E2 = full_E2[e2_start..e2_end].to_vec();
+        let E2_len = rect_rows;
+
+        // ---------------- tail from remaining indices ----------------
+        let mut E3 = Vec::with_capacity(tail_len);
+        if tail_len > 0 {
+            let mask = E1_len - 1;
+            for local in 0..tail_len {
+                let t = offset + rect_len + local; // global index in full Eq table
+                let c_idx = t & mask; // lower e1_vars bits
+                let ab_idx = t >> e1_vars; // upper bits for (A,B)
+                let val = full_E2[ab_idx] * E1[c_idx];
+                E3.push(val);
+            }
+        }
+
+        Self {
+            num_vars,
+            E1,
+            E1_len,
+            E2,
+            E2_len,
+            E3,
+        }
+    }
+
+    pub fn get_num_vars(&self) -> usize {
+        self.num_vars
+    }
+
+    #[inline]
+    pub fn rect_len(&self) -> usize {
+        if self.E1_len == 1 {
+            self.E2_len
+        } else {
+            self.E1_len * self.E2_len
+        }
+    }
+
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.rect_len() + self.E3.len()
+    }
+
+    /// Bind one sumcheck variable (same order as for SplitEqPolynomial::bind).
+    pub fn bind(&mut self, r: F) {
+        // ---- Rectangular part (same as SplitEqPolynomial) ----
+        if self.E1_len == 1 {
+            // E1 is fully bound: bind E2 in linear-time fashion (Dao–Thaler “done” case).
+            let n = self.E2_len / 2;
+            for i in 0..n {
+                let a = self.E2[2 * i];
+                let b = self.E2[2 * i + 1];
+                self.E2[i] = a + r * (b - a);
+            }
+            self.E2_len = n;
+        } else {
+            // Bind inside E1 (Dao–Thaler factorization still active).
+            let n = self.E1_len / 2;
+            for i in 0..n {
+                let a = self.E1[2 * i];
+                let b = self.E1[2 * i + 1];
+                self.E1[i] = a + r * (b - a);
+            }
+            self.E1_len = n;
+
+            if self.E1_len == 1 {
+                // Switch to linear-time regime for the rectangle: fold E1[0] into E2.
+                let alpha = self.E1[0];
+                self.E2[..self.E2_len].iter_mut().for_each(|e| *e *= alpha);
+            }
+        }
+
+        // ---- Tail: always bound in linear-time mode ----
+        //
+        // We treat tail as a flat eq vector. Once we've bound away all variables,
+        // tail.len() will eventually go down to 1 (or 0).
+        if !self.E3.is_empty() {
+            let m = self.E3.len() / 2;
+            for i in 0..m {
+                let a = self.E3[2 * i];
+                let b = self.E3[2 * i + 1];
+                self.E3[i] = a + r * (b - a);
+            }
+            // If tail.len() is odd, we just drop the last orphan entry; this is fine
+            // as long as you only ever construct tail from an eq prefix where the
+            // last round’s chunking respects variable pairs (i.e. we only put the
+            // “weirdness” in the *first* dimension, not the last).
+            self.E3.truncate(m);
+        }
+    }
+
+    /// Reconstruct the (rectangular prefix || tail) as a flat DensePolynomial.
+    pub fn merge(&self) -> DensePolynomial<F> {
+        let mut merged = Vec::with_capacity(self.len());
+
+        // Rectangular part
+        if self.E1_len == 1 {
+            // Linear-time regime: rect is just the flat E2 prefix.
+            merged.extend_from_slice(&self.E2[..self.E2_len]);
+        } else {
+            // Dao–Thaler regime: rect = E2 × E1, row-major in (E2, E1).
+            for &e2 in &self.E2[..self.E2_len] {
+                for &e1 in &self.E1[..self.E1_len] {
+                    merged.push(e2 * e1);
+                }
+            }
+        }
+
+        // Tail: already stored as flat eq-evals in correct order.
+        merged.extend_from_slice(&self.E3);
+
+        DensePolynomial::new_padded(merged)
     }
 }
 
