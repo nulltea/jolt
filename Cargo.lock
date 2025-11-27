@@ -39,21 +39,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "alloc"
-version = "0.1.0"
-dependencies = [
- "alloc-guest",
- "jolt-sdk",
-]
-
-[[package]]
-name = "alloc-guest"
-version = "0.1.0"
-dependencies = [
- "jolt-sdk",
-]
-
-[[package]]
 name = "allocator-api2"
 version = "0.2.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -69,7 +54,7 @@ dependencies = [
  "bytes",
  "cfg-if",
  "const-hex",
- "derive_more 0.99.20",
+ "derive_more",
  "hex-literal",
  "itoa",
  "k256",
@@ -605,19 +590,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "build-fs-tree"
-version = "0.7.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "790713a24ee86ed258a0894a564f5ffd729b9d191c4960309926561173da7cf6"
-dependencies = [
- "derive_more 1.0.0",
- "pipe-trait",
- "serde",
- "serde_yaml",
- "text-block-macros",
-]
-
-[[package]]
 name = "bumpalo"
 version = "3.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -769,21 +741,6 @@ name = "cobs"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "67ba02a97a2bd10f4b59b25c7973101c79642302776489e030cd13cdab09ed15"
-
-[[package]]
-name = "collatz"
-version = "0.1.0"
-dependencies = [
- "collatz-guest",
- "jolt-sdk",
-]
-
-[[package]]
-name = "collatz-guest"
-version = "0.1.0"
-dependencies = [
- "jolt-sdk",
-]
 
 [[package]]
 name = "colorchoice"
@@ -1019,27 +976,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "derive_more"
-version = "1.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4a9b99b9cbbe49445b21764dc0625032a89b145a2642e67603e1c936f5458d05"
-dependencies = [
- "derive_more-impl",
-]
-
-[[package]]
-name = "derive_more-impl"
-version = "1.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cb7330aeadfbe296029522e6c40f315320aba36fc43a5b3632f3795348f3bd22"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.101",
- "unicode-xid",
-]
-
-[[package]]
 name = "digest"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1270,22 +1206,6 @@ checksum = "c0b50bfb653653f9ca9095b427bed08ab8d75a137839d9ad64eb11810d5b6393"
 dependencies = [
  "rand_core 0.6.4",
  "subtle",
-]
-
-[[package]]
-name = "fibonacci"
-version = "0.1.0"
-dependencies = [
- "fibonacci-guest",
- "hex",
- "jolt-sdk",
-]
-
-[[package]]
-name = "fibonacci-guest"
-version = "0.1.0"
-dependencies = [
- "jolt-sdk",
 ]
 
 [[package]]
@@ -2199,23 +2119,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "78ca9ab1a0babb1e7d5695e3530886289c18cf2f87ec19a575a0abdce112e3a3"
 
 [[package]]
-name = "memory-ops"
-version = "0.1.0"
-dependencies = [
- "hex",
- "jolt-sdk",
- "memory-ops-guest",
-]
-
-[[package]]
-name = "memory-ops-guest"
-version = "0.1.0"
-dependencies = [
- "jolt-sdk",
- "sha3",
-]
-
-[[package]]
 name = "memory-stats"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2255,36 +2158,6 @@ dependencies = [
  "libc",
  "wasi 0.11.0+wasi-snapshot-preview1",
  "windows-sys 0.52.0",
-]
-
-[[package]]
-name = "muldiv"
-version = "0.1.0"
-dependencies = [
- "jolt-sdk",
- "muldiv-guest",
-]
-
-[[package]]
-name = "muldiv-guest"
-version = "0.1.0"
-dependencies = [
- "jolt-sdk",
-]
-
-[[package]]
-name = "multi-function"
-version = "0.1.0"
-dependencies = [
- "jolt-sdk",
- "multi-function-guest",
-]
-
-[[package]]
-name = "multi-function-guest"
-version = "0.1.0"
-dependencies = [
- "jolt-sdk",
 ]
 
 [[package]]
@@ -2499,21 +2372,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "04744f49eae99ab78e0d5c0b603ab218f515ea8cfe5a456d7629ad883a3b6e7d"
 
 [[package]]
-name = "overflow"
-version = "0.1.0"
-dependencies = [
- "jolt-sdk",
- "overflow-guest",
-]
-
-[[package]]
-name = "overflow-guest"
-version = "0.1.0"
-dependencies = [
- "jolt-sdk",
-]
-
-[[package]]
 name = "overload"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2581,12 +2439,6 @@ name = "pin-utils"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
-
-[[package]]
-name = "pipe-trait"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c1be1ec9e59f0360aefe84efa6f699198b685ab0d5718081e9f72aa2344289e2"
 
 [[package]]
 name = "pkcs8"
@@ -3331,19 +3183,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "serde_yaml"
-version = "0.9.34+deprecated"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6a8b1a1a2ebf674015cc02edccce75287f1a0130d394307b36743c2f5d504b47"
-dependencies = [
- "indexmap",
- "itoa",
- "ryu",
- "serde",
- "unsafe-libyaml",
-]
-
-[[package]]
 name = "sha2"
 version = "0.10.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3352,40 +3191,6 @@ dependencies = [
  "cfg-if",
  "cpufeatures",
  "digest 0.10.7",
-]
-
-[[package]]
-name = "sha2-chain"
-version = "0.1.0"
-dependencies = [
- "hex",
- "jolt-sdk",
- "sha2-chain-guest",
-]
-
-[[package]]
-name = "sha2-chain-guest"
-version = "0.1.0"
-dependencies = [
- "jolt-sdk",
- "sha2",
-]
-
-[[package]]
-name = "sha2-ex"
-version = "0.1.0"
-dependencies = [
- "hex",
- "jolt-sdk",
- "sha2-guest",
-]
-
-[[package]]
-name = "sha2-guest"
-version = "0.1.0"
-dependencies = [
- "jolt-sdk",
- "sha2",
 ]
 
 [[package]]
@@ -3406,40 +3211,6 @@ checksum = "c28efc5e327c837aa837c59eae585fc250715ef939ac32881bcc11677cd02d46"
 dependencies = [
  "cc",
  "cfg-if",
-]
-
-[[package]]
-name = "sha3-chain"
-version = "0.1.0"
-dependencies = [
- "hex",
- "jolt-sdk",
- "sha3-chain-guest",
-]
-
-[[package]]
-name = "sha3-chain-guest"
-version = "0.1.0"
-dependencies = [
- "jolt-sdk",
- "sha3",
-]
-
-[[package]]
-name = "sha3-ex"
-version = "0.1.0"
-dependencies = [
- "hex",
- "jolt-sdk",
- "sha3-guest",
-]
-
-[[package]]
-name = "sha3-guest"
-version = "0.1.0"
-dependencies = [
- "jolt-sdk",
- "sha3",
 ]
 
 [[package]]
@@ -3513,21 +3284,6 @@ name = "static_assertions"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
-
-[[package]]
-name = "stdlib"
-version = "0.1.0"
-dependencies = [
- "jolt-sdk",
- "stdlib-guest",
-]
-
-[[package]]
-name = "stdlib-guest"
-version = "0.1.0"
-dependencies = [
- "jolt-sdk",
-]
 
 [[package]]
 name = "strsim"
@@ -3684,12 +3440,6 @@ dependencies = [
  "rustix 1.0.7",
  "windows-sys 0.59.0",
 ]
-
-[[package]]
-name = "text-block-macros"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7f8b59b4da1c1717deaf1de80f0179a9d8b4ac91c986d5fd9f4a8ff177b84049"
 
 [[package]]
 name = "thiserror"
@@ -4002,12 +3752,6 @@ name = "unicode-xid"
 version = "0.2.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ebc1c04c71510c7f702b52b7c350734c9ff1295c464a03335b00bb84fc54f853"
-
-[[package]]
-name = "unsafe-libyaml"
-version = "0.2.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "673aac59facbab8a9007c7f6108d11f63b603f7cabff99fabf650fea5c32b861"
 
 [[package]]
 name = "untrusted"
@@ -4675,21 +4419,4 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.101",
-]
-
-[[package]]
-name = "zklean-extractor"
-version = "0.1.0"
-dependencies = [
- "ark-bn254",
- "ark-serialize 0.5.0",
- "ark-std 0.5.0",
- "build-fs-tree",
- "clap",
- "common",
- "jolt-core",
- "proptest",
- "rand_core 0.6.4",
- "regex",
- "strum",
 ]

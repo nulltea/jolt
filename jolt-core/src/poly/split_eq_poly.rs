@@ -387,37 +387,71 @@ fn test_merge2() {
     // assert_eq!(chunk0.Z, hack.Z);
 }
 
+/// A SplitEqPolynomial chunk assigned to a single worker, with:
+/// - Dao–Thaler factorization Eq(i_A, i_C, i_B) = E2(i_A, i_B) * E1(i_C),
+/// - a *contiguous* 1D slice of the global Eq table [global_start, global_end),
+/// - plus metadata to map between:
+///     - global EQ indices,
+///     - (row, col) indices in the factored table,
+///     - local slice indices used to align with DenseInterleavedPolynomial.
 pub struct DistributedSplitEqPolynomial<F> {
-    /// Number of variables *in this worker chunk* (A|C), excluding chunk bits B.
+    /// Number of currently unbound variables *seen by this worker* (A|C),
+    /// i.e. total Eq variables minus already-bound ones and minus chunk bits B.
     pub num_vars: usize,
 
-    // -------- factored rectangular part over A|C|B --------
+    // -------- factored Dao–Thaler structure over A|C|B --------
     //
-    // Same semantics as SplitEqPolynomial: Eq_rect(i_A, i_C, i_B) = E2(i_A, i_B) * E1(i_C)
+    // Semantics match SplitEqPolynomial:
+    //
+    //   Eq_rect(i_A, i_C, i_B) = E2(i_A, i_B) * E1(i_C)
+    //
+    // where:
+    //   - i_C indexes the "inner" variables C (columns, bound first),
+    //   - (i_A, i_B) indexes the "outer" variables A and chunk bits B (rows).
     pub E1: Vec<F>,
-    pub E1_len: usize, // = 2^{|C|} or 1
+    /// Current number of columns in the Dao–Thaler factorization: 2^{|C|} or 1.
+    pub E1_len: usize,
+
     pub E2: Vec<F>,
+    /// Current number of rows in the Dao–Thaler factorization: 2^{|A|+|B|_active}.
     pub E2_len: usize,
 
-    pub row_start: usize,    // global row index of E2[0]
-    pub global_start: usize, // first global eq index assigned to this worker
-    pub global_end: usize,   // exclusive
-    pub worker_len: usize,   // exclusive
+    /// Global row index of E2[0]. I.e. E2[row_offset] corresponds to the global row
+    /// with index row_start + row_offset in the full Eq table.
+    pub row_start: usize,
+
+    /// First global Eq index assigned to this worker (flattened row-major index into the
+    /// *full* Eq table before Dao–Thaler factorization and chunking).
+    pub global_start: usize,
+
+    /// One-past last global Eq index assigned to this worker.
+    pub global_end: usize,
+
+    /// Length of this worker’s Eq slice in *points*:
+    ///   worker_len = global_end - global_start
+    ///
+    /// This is the number of Eq points this worker logically owns, even if after binding
+    /// the attached polynomial P only covers a prefix of them.
+    pub worker_len: usize,
 }
 
 impl<F: JoltField> DistributedSplitEqPolynomial<F> {
     #[tracing::instrument(skip_all, name = "DistributedSplitEqPolynomial::new", level = "trace")]
     pub fn new(w: &[F], log_chunks: usize, k: usize, eq_pairs: usize) -> Self {
+        // Build the *global* SplitEqPolynomial over all variables A|C|B.
         let base = SplitEqPolynomial::new(w);
 
         let n_workers = 1usize << log_chunks;
         assert!(k < n_workers, "worker index {} out of {}", k, n_workers);
 
-        let cols = base.E1_len; // = 2^{|C|}
-        let rows = base.E2_len; // = 2^{|A|+|B|}
-        let total_points = cols * rows;
+        // E1_len = number of columns = 2^{|C|}.
+        // E2_len = number of rows    = 2^{|A|+|B|}.
+        let E1_len_global = base.E1_len;
+        let E2_len_global = base.E2_len;
+        let total_points = E1_len_global * E2_len_global;
 
-        // Contiguous eq-slice policy:
+        // The coordinator assigns each worker a *contiguous* 1D slice of the flattened Eq
+        // table using [global_start, global_end), measured in Eq points (not rows).
         let global_start = k * eq_pairs;
         assert!(
             global_start < total_points,
@@ -427,7 +461,7 @@ impl<F: JoltField> DistributedSplitEqPolynomial<F> {
             total_points
         );
 
-        // Last worker goes "until the end"
+        // All non-last workers get exactly `eq_pairs` points, last worker runs to the end.
         let global_end = if k + 1 == n_workers {
             total_points
         } else {
@@ -435,21 +469,28 @@ impl<F: JoltField> DistributedSplitEqPolynomial<F> {
         };
         assert!(global_end > global_start);
 
-        // Minimal full-row rectangle that covers [global_start, global_end)
-        let row_start = global_start / cols;
-        let mut row_end = (global_end + cols - 1) / cols; // ceil
-        if row_end > rows {
-            row_end = rows;
+        // Compute the minimal *row interval* [row_start, row_end) in the global Eq
+        // table that covers this 1D slice [global_start, global_end). Rows are
+        // indexed in row-major order with row width E1_len_global.
+        //
+        //   row_start = floor(global_start / E1_len)
+        //   row_end   = ceil(global_end  / E1_len)
+        //
+        let row_start = global_start / E1_len_global;
+        let mut row_end = (global_end + E1_len_global - 1) / E1_len_global; // ceil
+        if row_end > E2_len_global {
+            row_end = E2_len_global;
         }
         assert!(row_start < row_end);
-        assert!(row_end <= rows);
+        assert!(row_end <= E2_len_global);
 
+        // Restrict E2 to the rows actually needed for this worker.
         let e2_start = row_start;
         let e2_end = row_end;
         let e2_len = e2_end - e2_start;
-
         let E2 = base.E2[e2_start..e2_end].to_vec();
 
+        // Worker’s logical Eq slice length in points.
         let worker_len = global_end - global_start;
 
         Self {
@@ -465,24 +506,36 @@ impl<F: JoltField> DistributedSplitEqPolynomial<F> {
         }
     }
 
+    /// Current number of unbound variables (A|C) in this worker’s view.
     pub fn get_num_vars(&self) -> usize {
         self.num_vars
     }
 
     #[inline]
     pub fn len(&self) -> usize {
-        todo!()
+        // Number of Eq points in this worker's contiguous slice
+        // [global_start, global_end), after any bindings.
+        self.worker_len
     }
 
-    /// Bind one sumcheck variable (same order as for SplitEqPolynomial::bind).
+    /// Bind one sumcheck variable (same order/convention as `SplitEqPolynomial::bind`).
+    ///
+    /// Semantics:
+    /// - If C is non-empty (E1_len > 1), we bind a C-variable:
+    ///     - E1_len halves, E1 entries are linearly combined by r,
+    ///     - if E1_len becomes 1, we collapse into linear-time mode by scaling E2.
+    /// - If C is empty (E1_len == 1), we bind an A|B-variable:
+    ///     - E2_len halves, each new row is a combination of two old rows,
+    ///     - row_start halves because rows are merged pairwise.
+    ///
+    /// In all cases, the *global* Eq table halves in length and each new global index
+    /// corresponds to floor(old_index / 2), so we also remap [global_start, global_end)
+    /// and `worker_len` accordingly.
     pub fn bind(&mut self, r: F) {
-        // Save old globals to remap the index interval
-
         // ---------------- bind coefficients (as in SplitEqPolynomial) ----------------
         if self.E1_len == 1 {
-            // E1 is fully bound, so we bind E2 (rows).
-            // This is exactly the same as the base SplitEqPolynomial behavior,
-            // but we must remember that we are also collapsing *global rows*.
+            // E1 is fully bound, so we are binding a variable that affects the outer
+            // dimension (A|B). This corresponds to merging pairs of rows in E2.
             let n = self.E2_len / 2;
             for i in 0..n {
                 let a = self.E2[2 * i];
@@ -491,10 +544,11 @@ impl<F: JoltField> DistributedSplitEqPolynomial<F> {
             }
             self.E2_len = n;
 
-            // Collapse global row indices: each new row corresponds to two old rows.
+            // After merging rows pairwise, the global row index of E2[0] halves as well.
             self.row_start /= 2;
         } else {
-            // Bind E1 (columns) — Dao–Thaler inner dimension.
+            // E1 still has >1 columns, so we bind an inner C-variable (Dao–Thaler column
+            // dimension). This halves E1_len and linearly folds pairs of column entries.
             let n = self.E1_len / 2;
             for i in 0..n {
                 let a = self.E1[2 * i];
@@ -503,7 +557,9 @@ impl<F: JoltField> DistributedSplitEqPolynomial<F> {
             }
             self.E1_len = n;
 
-            // If E1 is now completely bound, switch to linear-time mode:
+            // Once E1 collapses to a single column, Dao–Thaler reduces to the usual
+            // linear-time sumcheck, and E2 simply stores the full Eq evaluations for
+            // the remaining outer variables. We fold E1 into E2 in-place.
             if self.E1_len == 1 {
                 let scale = self.E1[0];
                 self.E2[..self.E2_len]
@@ -512,16 +568,24 @@ impl<F: JoltField> DistributedSplitEqPolynomial<F> {
             }
         }
 
-        // One EQ variable bound
+        // One Eq variable is now bound from this worker’s perspective.
         self.num_vars = self.num_vars.saturating_sub(1);
 
         // ---------------- remap global index interval ----------------
         //
-        // Global EQ indices are always considered in row-major order.
-        // After binding one variable, the new EQ table has half as many points,
-        // and each new index is floor(old_index / 2).
+        // Global Eq indices are treated as a flat array in row-major order.
+        // Binding any variable halves the total number of Eq points; each new global
+        // index corresponds to floor(old_index / 2). Therefore the worker’s slice
+        // [global_start, global_end) maps to:
+        //
+        //   global_start' = floor(global_start / 2)
+        //   global_end'   = floor((global_end - 1) / 2) + 1
+        //
+        // The (x + 1) >> 1 idiom implements exactly this for unsigned integers.
         self.global_start = self.global_start >> 1;
         self.global_end = (self.global_end + 1) >> 1;
+
+        // Length of this worker’s Eq slice in points also halves, rounded up.
         self.worker_len = (self.worker_len + 1) >> 1;
     }
 

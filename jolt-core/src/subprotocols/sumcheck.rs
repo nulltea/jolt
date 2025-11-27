@@ -587,22 +587,31 @@ impl<F: JoltField, ProofTranscript: Transcript> SumcheckInstanceProof<F, ProofTr
     }
 }
 
+/// Evaluate the cubic sumcheck round polynomial for a `DenseInterleavedPolynomial`
+/// against a (possibly distributed) SplitEqPolynomial, using Dao–Thaler.
+///
+/// - `poly` is interleaved as [L0, R0, L1, R1, ...].
+/// - `eq_poly` is either:
+///     * factored as E2 * E1 (E1_len > 1, Dao–Thaler mode), or
+///     * collapsed into E2 only (E1_len == 1, linear-time mode).
 fn dense_interleaved_sumcheck_evals<F: JoltField>(
     poly: &DenseInterleavedPolynomial<F>,
     eq_poly: &DistributedSplitEqPolynomial<F>,
 ) -> Vec<F> {
-    // We use the Dao-Thaler optimization for the EQ polynomial, so there are two cases we
-    // must handle. For details, refer to Section 2.2 of https://eprint.iacr.org/2024/1210.pdf
+    // We use the Dao–Thaler optimization for the EQ polynomial, so there are two cases:
+    //   1) E1_len == 1: fully bound inner dimension → standard linear-time sumcheck.
+    //   2) E1_len > 1:  factored Eq = E2(i_A,i_B) * E1(i_C) → nested summation.
     let cubic_evals = if eq_poly.E1_len == 1 {
-        // If `eq_poly.E1` has been fully bound, we compute the cubic polynomial as we
-        // would without the Dao-Thaler optimization, using the standard linear-time
-        // sumcheck algorithm.
-
-        // poly.par_chunks(4)
-        //     .zip(E2.par_chunks(2))
+        // ---------------- linear-time mode: no Dao–Thaler factorization left ----------------
+        //
+        // At this point, E2 already contains the full Eq evaluations over the remaining
+        // variables, aligned 1:1 with the points that `poly` represents. We simply
+        // zip chunks of P with chunks of Eq and do the standard cubic evaluation.
         poly.par_chunks(4)
             .zip(eq_poly.E2.par_chunks(2))
             .map(|(layer_chunk, eq_chunk)| {
+                // Compute Eq(r) at three relevant points j ∈ {0, 2, 3} from two stored
+                // values using the standard 4-point interpolation trick.
                 let eq_evals = {
                     let eval_point_0 = eq_chunk[0];
                     let m_eq = eq_chunk[1] - eq_chunk[0];
@@ -610,6 +619,8 @@ fn dense_interleaved_sumcheck_evals<F: JoltField>(
                     let eval_point_3 = eval_point_2 + m_eq;
                     (eval_point_0, eval_point_2, eval_point_3)
                 };
+
+                // Interleaved [L0, R0, L1, R1] chunk for this point.
                 let left = (
                     *layer_chunk.first().unwrap_or(&F::zero()),
                     *layer_chunk.get(2).unwrap_or(&F::zero()),
@@ -619,6 +630,7 @@ fn dense_interleaved_sumcheck_evals<F: JoltField>(
                     *layer_chunk.get(3).unwrap_or(&F::zero()),
                 );
 
+                // Evaluate left(r) and right(r) at j = 2, 3 using affine interpolation.
                 let m_left = left.1 - left.0;
                 let m_right = right.1 - right.0;
 
@@ -639,8 +651,19 @@ fn dense_interleaved_sumcheck_evals<F: JoltField>(
                 |sum, evals| (sum.0 + evals.0, sum.1 + evals.1, sum.2 + evals.2),
             )
     } else {
+        // ---------------- Dao–Thaler mode: Eq(i_A,i_C,i_B) = E2(i_A,i_B) * E1(i_C) ----------------
+        //
+        // Here we treat:
+        //   - E1: inner dimension over C (columns),
+        //   - E2: outer dimension over A|B (rows).
+        //
+        // For each row (fixed i_A,i_B), we:
+        //   1. combine the relevant E1 entries with P-chunks along the C direction,
+        //   2. multiply the resulting inner sum by the corresponding E2(row) value.
         let E1_len = eq_poly.E1_len;
 
+        // Precompute Dao–Thaler E1 evaluations at the three needed points j ∈ {0,2,3}
+        // for each C-position (i_C). E1_evals[c] = (E1(c, j=0), E1(c, j=2), E1(c, j=3)).
         let E1_evals: Vec<_> = eq_poly.E1[..E1_len]
             .par_chunks(2)
             .map(|E1_chunk| {
@@ -652,42 +675,77 @@ fn dense_interleaved_sumcheck_evals<F: JoltField>(
             })
             .collect();
 
+        // The poly currently represents `poly.len() / 2` Eq points (each point
+        // corresponds to 2 coefficients in an interleaved L/R representation).
+        //
+        // This worker is logically responsible for `worker_len` Eq points starting
+        // at `global_start`, but we must not read beyond what `poly` actually has.
         let slice_end = eq_poly.global_start + core::cmp::min(eq_poly.worker_len, poly.len() / 2);
 
+        // Upper bound (exclusive) on E2 indices this worker can actually use:
+        //
+        //   - A row with global index r covers global Eq indices [r * E1_len, (r+1)*E1_len),
+        //   - we only care about rows that intersect [global_start, slice_end),
+        //   - convert that intersection into a local row-offset range for this worker.
         let E2_local_bound = slice_end
-            .div_ceil(E1_len)
-            .saturating_sub(eq_poly.row_start)
-            .min(eq_poly.E2_len);
+                .div_ceil(E1_len) // first row index strictly after slice_end
+                .saturating_sub(eq_poly.row_start)
+                .min(eq_poly.E2_len);
 
-        // parallel Dao–Thaler evaluation over row tasks
+        // Dao–Thaler outer loop: iterate over each relevant row of E2 and perform
+        // the inner sum over the C dimension, restricted to this worker’s slice.
         eq_poly.E2[..E2_local_bound]
             .par_iter()
             .enumerate()
-            .map(|(row_offset, E2_eval)| {
-                // global row index
-                let r = eq_poly.row_start + row_offset;
-                // The global index of the first cell in this row
+            .map(|(E2_i, E2_eval)| {
+                // Global row index in the full Eq table.
+                let r = eq_poly.row_start + E2_i;
+
+                // Global Eq index range covered by this row: [row_first, row_last).
                 let row_first = r * E1_len;
-                // the end index of the row's global-index interval
                 let row_last = row_first + E1_len;
 
-                // the first EQ index in this row that actually belongs to this worker.
+                // Intersection with the worker’s assigned slice [global_start, worker_end),
+                // expressed in global Eq indices.
                 let eq_first = eq_poly.global_start.max(row_first);
-                // the index just past the last EQ evaluation from this row that this worker owns
                 let eq_last = (eq_poly.global_start + eq_poly.worker_len).min(row_last);
 
-                let pair_from = (eq_first - row_first) / 2;
-                let pair_to = (eq_last - row_first) / 2;
+                // We expect this row to intersect the slice if it is within E2_local_bound.
+                debug_assert!(eq_last > eq_first);
 
-                let coeff_start = (eq_first - eq_poly.global_start) * 2;
-                assert!(coeff_start < poly.len(), "coeff_start out of bounds");
+                // Column offsets inside the row (in Eq points).
+                let col_from = eq_first - row_first;
+                let col_to = eq_last - row_first;
 
-                let row_coeffs = &poly.coeffs[coeff_start..poly.len()];
-                let mut inner = (F::zero(), F::zero(), F::zero());
+                // Each Dao–Thaler E1 entry spans 2 Eq points; enforce alignment.
+                debug_assert!(
+                    col_from % 2 == 0 && col_to % 2 == 0,
+                    "misaligned Eq slice within row"
+                );
 
-                for (E1_evals, chunk) in E1_evals[pair_from..pair_to]
+                // Range of C-indices (pairs) in this row that belong to this worker.
+                let E1_from = col_from / 2;
+                let E1_to = col_to / 2;
+
+                // Local Eq point index inside this worker’s slice:
+                //
+                //   local_point_idx = eq_first - global_start
+                //
+                // Each point corresponds to 2 coefficients in the interleaved polynomial.
+                let poly_from = (eq_first - eq_poly.global_start) * 2;
+                assert!(poly_from < poly.len(), "coeff_start out of bounds");
+
+                let mut inner_sum = (F::zero(), F::zero(), F::zero());
+
+                // Inner Dao–Thaler sum along C:
+                //
+                //   sum_{c in [pair_from,pair_to)} E1_evals[c] * P_chunk(c)
+                //
+                // where P_chunk(c) is the 4-coefficient interleaved block for that
+                // position in the grand product GKR wiring.
+                for (E1_evals, chunk) in E1_evals[E1_from..E1_to]
                     .iter()
-                    .zip(row_coeffs.chunks(4))
+                    .zip(poly.coeffs[poly_from..poly.len()].chunks(4))
                 {
                     let left = (
                         *chunk.first().unwrap_or(&F::zero()),
@@ -707,12 +765,17 @@ fn dense_interleaved_sumcheck_evals<F: JoltField>(
                     let right_eval_2 = right.1 + m_right;
                     let right_eval_3 = right_eval_2 + m_right;
 
-                    inner.0 += E1_evals.0 * left.0 * right.0;
-                    inner.1 += E1_evals.1 * left_eval_2 * right_eval_2;
-                    inner.2 += E1_evals.2 * left_eval_3 * right_eval_3;
+                    inner_sum.0 += E1_evals.0 * left.0 * right.0;
+                    inner_sum.1 += E1_evals.1 * left_eval_2 * right_eval_2;
+                    inner_sum.2 += E1_evals.2 * left_eval_3 * right_eval_3;
                 }
 
-                (*E2_eval * inner.0, *E2_eval * inner.1, *E2_eval * inner.2)
+                // Multiply by the outer E2(row) value for this (i_A, i_B) row.
+                (
+                    *E2_eval * inner_sum.0,
+                    *E2_eval * inner_sum.1,
+                    *E2_eval * inner_sum.2,
+                )
             })
             .reduce(
                 || (F::zero(), F::zero(), F::zero()),
@@ -720,179 +783,8 @@ fn dense_interleaved_sumcheck_evals<F: JoltField>(
             )
     };
 
-    let cubic_evals = vec![cubic_evals.0, cubic_evals.1, cubic_evals.2];
-
-    cubic_evals
+    vec![cubic_evals.0, cubic_evals.1, cubic_evals.2]
 }
-
-// fn dense_interleaved_sumcheck_evals<F: JoltField>(
-//     poly: &DenseInterleavedPolynomial<F>,
-//     eq_poly: &DistributedSplitEqPolynomial<F>,
-// ) -> Vec<F> {
-//     // We use the Dao-Thaler optimization for the EQ polynomial, so there are two cases we
-//     // must handle. For details, refer to Section 2.2 of https://eprint.iacr.org/2024/1210.pdf
-//     let cubic_evals = if eq_poly.E1_len == 1 {
-//         // If `eq_poly.E1` has been fully bound, we compute the cubic polynomial as we
-//         // would without the Dao-Thaler optimization, using the standard linear-time
-//         // sumcheck algorithm.
-
-//         // poly.par_chunks(4)
-//         //     .zip(E2.par_chunks(2))
-//         poly.coeffs[..poly.len()]
-//             .chunks(4)
-//             .zip(eq_poly.E2.chunks(2))
-//             .map(|(layer_chunk, eq_chunk)| {
-//                 let eq_evals = {
-//                     let eval_point_0 = eq_chunk[0];
-//                     let m_eq = eq_chunk[1] - eq_chunk[0];
-//                     let eval_point_2 = eq_chunk[1] + m_eq;
-//                     let eval_point_3 = eval_point_2 + m_eq;
-//                     (eval_point_0, eval_point_2, eval_point_3)
-//                 };
-//                 let left = (
-//                     *layer_chunk.first().unwrap_or(&F::zero()),
-//                     *layer_chunk.get(2).unwrap_or(&F::zero()),
-//                 );
-//                 let right = (
-//                     *layer_chunk.get(1).unwrap_or(&F::zero()),
-//                     *layer_chunk.get(3).unwrap_or(&F::zero()),
-//                 );
-
-//                 let m_left = left.1 - left.0;
-//                 let m_right = right.1 - right.0;
-
-//                 let left_eval_2 = left.1 + m_left;
-//                 let left_eval_3 = left_eval_2 + m_left;
-
-//                 let right_eval_2 = right.1 + m_right;
-//                 let right_eval_3 = right_eval_2 + m_right;
-
-//                 println!(
-//                     "E2 partial evals: {:?}",
-//                     [
-//                         [eq_evals.0, eq_evals.1, eq_evals.2],
-//                         [left.0, left_eval_2, left_eval_3],
-//                         [right.0, right_eval_2, right_eval_3]
-//                     ]
-//                 );
-
-//                 (
-//                     eq_evals.0 * left.0 * right.0,
-//                     eq_evals.1 * left_eval_2 * right_eval_2,
-//                     eq_evals.2 * left_eval_3 * right_eval_3,
-//                 )
-//             })
-//             .reduce(
-//                 // || (F::zero(), F::zero(), F::zero()),
-//                 |sum, evals| (sum.0 + evals.0, sum.1 + evals.1, sum.2 + evals.2),
-//             )
-//             .unwrap()
-//     } else {
-//         let cols = eq_poly.E1_len;
-//         let rows = eq_poly.E2_len;
-//         let local_len = eq_poly.global_end - eq_poly.global_start;
-
-//         let E1_evals: Vec<_> = eq_poly.E1[..eq_poly.E1_len]
-//             .par_chunks(2)
-//             .map(|E1_chunk| {
-//                 let eval_point_0 = E1_chunk[0];
-//                 let m_eq = E1_chunk[1] - E1_chunk[0];
-//                 let eval_point_2 = E1_chunk[1] + m_eq;
-//                 let eval_point_3 = eval_point_2 + m_eq;
-//                 (eval_point_0, eval_point_2, eval_point_3)
-//             })
-//             .collect();
-
-//         println!("E1_evals: {:?}", E1_evals);
-//         println!("E2: {:?}", &eq_poly.E2[..eq_poly.E2_len]);
-
-//         fn nearest_multiple_of(n: usize, m: usize) -> usize {
-//             assert!(m > 0);
-//             n - (n % m)
-//         }
-
-//         let chunk_size =
-//             (poly.len().next_power_of_two() / eq_poly.E2_len.next_multiple_of(2)).max(1);
-//         println!(
-//             "poly_len.next_power_of_two: {} / eq_poly.E2_len {} = chunk_size: {}",
-//             poly.len().next_power_of_two(),
-//             eq_poly.E2_len,
-//             chunk_size
-//         );
-
-//         eq_poly.E2[..eq_poly.E2_len]
-//             .iter()
-//             .zip(poly.coeffs[..poly.len()].chunks(chunk_size))
-//             .enumerate()
-//             .map(|(row_offset, (E2_eval, P_x2))| {
-//                 let r = eq_poly.row_start + row_offset; // global row index
-//                 let row_first = r * cols;
-//                 let row_last = row_first + cols;
-
-//                 // Intersection of this row with [global_start, global_end)
-//                 let from = (eq_poly.global_start.max(row_first) - row_first) / 2; // col_from
-//                 let to = (eq_poly.global_end.min(row_last) - row_first) / 2; // col_to
-
-//                 // The for-loop below corresponds to the inner sum:
-//                 // \sum_x1 ((1 - j) * E1[0, x1] + j * E1[1, x1]) * \prod_k ((1 - j) * P_k(0 || x1 || x2) + j * P_k(1 || x1 || x2))
-//                 let mut inner_sum = (F::zero(), F::zero(), F::zero());
-//                 for (E1_evals, P_chunk) in E1_evals[from..to].iter().zip(P_x2.chunks(4)) {
-//                     let left = (
-//                         *P_chunk.first().unwrap_or(&F::zero()),
-//                         *P_chunk.get(2).unwrap_or(&F::zero()),
-//                     );
-//                     let right = (
-//                         *P_chunk.get(1).unwrap_or(&F::zero()),
-//                         *P_chunk.get(3).unwrap_or(&F::zero()),
-//                     );
-//                     let m_left = left.1 - left.0;
-//                     let m_right = right.1 - right.0;
-
-//                     let left_eval_2 = left.1 + m_left;
-//                     let left_eval_3 = left_eval_2 + m_left;
-
-//                     let right_eval_2 = right.1 + m_right;
-//                     let right_eval_3 = right_eval_2 + m_right;
-
-//                     println!(
-//                         "E1 partial evals Eq:{:?} \nE1 partial evals L/R: {:?}",
-//                         [
-//                             (E1_evals.0, E2_eval),
-//                             (E1_evals.1, E2_eval),
-//                             (E1_evals.2, E2_eval)
-//                         ],
-//                         [
-//                             [left.0, left_eval_2, left_eval_3],
-//                             [right.0, right_eval_2, right_eval_3]
-//                         ]
-//                     );
-//                     println!("------");
-
-//                     inner_sum.0 += E1_evals.0 * left.0 * right.0;
-//                     inner_sum.1 += E1_evals.1 * left_eval_2 * right_eval_2;
-//                     inner_sum.2 += E1_evals.2 * left_eval_3 * right_eval_3;
-//                 }
-
-//                 println!("----------");
-
-//                 // Multiply the inner sum by E2[x2]
-//                 (
-//                     *E2_eval * inner_sum.0,
-//                     *E2_eval * inner_sum.1,
-//                     *E2_eval * inner_sum.2,
-//                 )
-//             })
-//             .reduce(
-//                 // || (F::zero(), F::zero(), F::zero()),
-//                 |sum, evals| (sum.0 + evals.0, sum.1 + evals.1, sum.2 + evals.2),
-//             )
-//             .unwrap()
-//     };
-
-//     let cubic_evals = vec![cubic_evals.0, cubic_evals.1, cubic_evals.2];
-
-//     cubic_evals
-// }
 
 #[test]
 fn test_memories_allocation() {
@@ -969,12 +861,6 @@ fn test_memories_allocation() {
                 .map(|mi| vec![F::from(init_index + mi as u64); M])
                 .collect_vec();
             init_index += memories.len() as u64;
-
-            // let subtable = vec![F::from(0); M];
-            // let final_cts = memories
-            //     .iter()
-            //     .map(|mi| vec![F::from(*mi as u64 + 1); M])
-            //     .collect_vec();
 
             (subtable, final_cts)
         })
@@ -1176,23 +1062,11 @@ fn run_simulation_dbgp_batch_wize<F: JoltField>(
             .par_iter()
             .map(DenseInterleavedPolynomial::layer_output)
             .collect::<Vec<_>>();
-        // println!(
-        //     "worker layer {} | out: {:?}",
-        //     layer_idx,
-        //     polys.iter().map(|p| &p.coeffs).collect::<Vec<_>>()
-        // );
-        println!("-------------");
 
         let next_layer = LayerCircuit { layer_idx, polys };
 
         worker_layers.push(next_layer);
     }
-
-    // let grand_product_output = {
-    //     let last_layer = worker_layers.last().unwrap();
-    //     let (left, right) = last_layer.polys[0].uninterleave();
-    //     izip!(left, right).map(|(a, b)| a * b).collect::<Vec<_>>()
-    // };
 
     let grand_product_output = {
         let last_layer = worker_layers.last().unwrap();
@@ -1243,30 +1117,10 @@ fn run_simulation_dbgp_batch_wize<F: JoltField>(
         //     num_rounds,
         //     layer.polys.iter().map(|p| &p.coeffs).collect::<Vec<_>>()
         // );
-        // let eq_pairs_per_worker = layer.polys[0].len() / 2;
 
         let mut eq_polys = (0..W)
             .map(|w| {
-                let mut eq = DistributedSplitEqPolynomial::new(
-                    &r_grand_product,
-                    W_log2,
-                    w,
-                    eq_pairs_per_worker,
-                );
-                let eq_base = SplitEqPolynomial::new(&r_grand_product);
-
-                 println!(
-                    "worker(k): {} r_grand_product {} (eq_pairs={} | eq_base: E1_len {} E2_len {} | chunk_distributed: E1_len {} E2_len {}",
-                    w, r_grand_product.len(), eq_pairs_per_worker, eq_base.E1_len, eq_base.E2_len, eq.E1_len, eq.E2_len
-                );
-
-                let mut check = SplitEqPolynomial::new_chunk_custom_hack(&r_grand_product, W_log2, w, eq_pairs_per_worker);
-
-                assert_eq!(
-                    check.merge().Z,
-                    eq.merge().Z
-                );
-                eq
+                DistributedSplitEqPolynomial::new(&r_grand_product, W_log2, w, eq_pairs_per_worker)
             })
             .collect_vec();
 

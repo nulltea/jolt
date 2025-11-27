@@ -252,14 +252,6 @@ impl<F: JoltField, ProofTranscript: Transcript> BatchedCubicSumcheck<F, ProofTra
                     let right_eval_2 = right.1 + m_right;
                     let right_eval_3 = right_eval_2 + m_right;
 
-                    // println!(
-                    //     "partial evals: {:?}",
-                    //     [
-                    //         [eq_evals.0, eq_evals.1, eq_evals.2],
-                    //         [left.0, left_eval_2, left_eval_3],
-                    //         [right.0, right_eval_2, right_eval_3]
-                    //     ]
-                    // );
                     (
                         eq_evals.0 * left.0 * right.0,
                         eq_evals.1 * left_eval_2 * right_eval_2,
