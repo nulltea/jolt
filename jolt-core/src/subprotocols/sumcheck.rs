@@ -628,15 +628,6 @@ fn dense_interleaved_sumcheck_evals<F: JoltField>(
                 let right_eval_2 = right.1 + m_right;
                 let right_eval_3 = right_eval_2 + m_right;
 
-                // println!(
-                //     "E2 partial evals: {:?}",
-                //     [
-                //         [eq_evals.0, eq_evals.1, eq_evals.2],
-                //         [left.0, left_eval_2, left_eval_3],
-                //         [right.0, right_eval_2, right_eval_3]
-                //     ]
-                // );
-
                 (
                     eq_evals.0 * left.0 * right.0,
                     eq_evals.1 * left_eval_2 * right_eval_2,
@@ -648,10 +639,9 @@ fn dense_interleaved_sumcheck_evals<F: JoltField>(
                 |sum, evals| (sum.0 + evals.0, sum.1 + evals.1, sum.2 + evals.2),
             )
     } else {
-        let cols = eq_poly.E1_len;
-        let rows = eq_poly.E2_len;
+        let E1_len = eq_poly.E1_len;
 
-        let E1_evals: Vec<_> = eq_poly.E1[..eq_poly.E1_len]
+        let E1_evals: Vec<_> = eq_poly.E1[..E1_len]
             .par_chunks(2)
             .map(|E1_chunk| {
                 let eval_point_0 = E1_chunk[0];
@@ -662,94 +652,40 @@ fn dense_interleaved_sumcheck_evals<F: JoltField>(
             })
             .collect();
 
-        #[derive(Clone, Copy)]
-        struct RowTask<F> {
-            coeff_start: usize,
-            pair_from: usize,
-            pair_to: usize,
-            e2_eval: F,
-        }
+        let slice_end = eq_poly.global_start + core::cmp::min(eq_poly.worker_len, poly.len() / 2);
 
-        // how many EQ points are represented by this poly chunk
-        let poly_pts = poly.len() / 2;
-        debug_assert!(poly.len() % 2 == 0 && poly_pts > 0);
-
-        println!("eq_poly.worker_len: {}", eq_poly.worker_len);
-
-        let max_pts = eq_poly.worker_len; //.min(poly_pts);
-        debug_assert!(max_pts > 0);
-
-        let mut tasks: Vec<RowTask<F>> = Vec::with_capacity(rows);
-        let mut used_pts = 0usize;
-
-        // println!("max_pts: {}", max_pts);
-
-        for row_offset in 0..rows {
-            if used_pts == max_pts {
-                break;
-            }
-
-            let e2_eval = eq_poly.E2[row_offset];
-
-            // global row index
-            let r = eq_poly.row_start + row_offset;
-            let row_first = r * cols;
-            let row_last = row_first + cols;
-
-            // // intersect this row with [slice_start, slice_start + max_pts)
-            let s = eq_poly.global_start.max(row_first);
-            let e = (eq_poly.global_start + max_pts).min(row_last);
-
-            if e <= s {
-                continue;
-            }
-
-            let row_pts = e - s;
-            let coeff_start = 2 * used_pts;
-            // let col_from = s - row_first;
-            // let col_to = e - row_first;
-
-            // let pair_from = col_from / 2;
-            // let pair_to = col_to / 2;
-
-            let pair_from = (eq_poly.global_start.max(row_first) - row_first) / 2; // col_from
-            let pair_to = (eq_poly.global_end.min(row_last) - row_first) / 2;
-
-            tasks.push(RowTask {
-                coeff_start,
-                pair_from,
-                pair_to,
-                e2_eval,
-            });
-
-            used_pts += row_pts;
-        }
-
-        let _chunk_size = (poly.len().next_power_of_two() / eq_poly.E2_len).max(1);
-        println!("_chunk_size: {}", _chunk_size);
+        let E2_local_bound = slice_end
+            .div_ceil(E1_len)
+            .saturating_sub(eq_poly.row_start)
+            .min(eq_poly.E2_len);
 
         // parallel Dao–Thaler evaluation over row tasks
-        tasks
-            .iter()
-            .map(|task| {
-                if task.coeff_start >= poly.len() {
-                    println!(
-                        "skipping: E1_evals[{:?}] poly[{:?}]",
-                        task.pair_from..task.pair_to,
-                        task.coeff_start..poly.len(),
-                    );
-                    return (F::zero(), F::zero(), F::zero());
-                }
-                println!(
-                    "E1_evals[{:?}] poly[{:?}] Echunk={}",
-                    task.pair_from..task.pair_to,
-                    task.coeff_start..poly.len(),
-                    poly.len() - task.coeff_start
-                );
-                let row_coeffs = &poly.coeffs[task.coeff_start..poly.len()];
+        eq_poly.E2[..E2_local_bound]
+            .par_iter()
+            .enumerate()
+            .map(|(row_offset, E2_eval)| {
+                // global row index
+                let r = eq_poly.row_start + row_offset;
+                // The global index of the first cell in this row
+                let row_first = r * E1_len;
+                // the end index of the row's global-index interval
+                let row_last = row_first + E1_len;
+
+                // the first EQ index in this row that actually belongs to this worker.
+                let eq_first = eq_poly.global_start.max(row_first);
+                // the index just past the last EQ evaluation from this row that this worker owns
+                let eq_last = (eq_poly.global_start + eq_poly.worker_len).min(row_last);
+
+                let pair_from = (eq_first - row_first) / 2;
+                let pair_to = (eq_last - row_first) / 2;
+
+                let coeff_start = (eq_first - eq_poly.global_start) * 2;
+                assert!(coeff_start < poly.len(), "coeff_start out of bounds");
+
+                let row_coeffs = &poly.coeffs[coeff_start..poly.len()];
                 let mut inner = (F::zero(), F::zero(), F::zero());
 
-                for (E1_evals, chunk) in E1_evals[task.pair_from..task.pair_to]
+                for (E1_evals, chunk) in E1_evals[pair_from..pair_to]
                     .iter()
                     .zip(row_coeffs.chunks(4))
                 {
@@ -771,37 +707,17 @@ fn dense_interleaved_sumcheck_evals<F: JoltField>(
                     let right_eval_2 = right.1 + m_right;
                     let right_eval_3 = right_eval_2 + m_right;
 
-                    // println!(
-                    //     "E1 partial evals: {:?}",
-                    //     [
-                    //         [
-                    //             E1_evals.0 * task.e2_eval,
-                    //             E1_evals.1 * task.e2_eval,
-                    //             E1_evals.2 * task.e2_eval
-                    //         ],
-                    //         [left.0, left_eval_2, left_eval_3],
-                    //         [right.0, right_eval_2, right_eval_3]
-                    //     ]
-                    // );
-                    // println!("------");
-
                     inner.0 += E1_evals.0 * left.0 * right.0;
                     inner.1 += E1_evals.1 * left_eval_2 * right_eval_2;
                     inner.2 += E1_evals.2 * left_eval_3 * right_eval_3;
                 }
-                println!("----------");
 
-                (
-                    task.e2_eval * inner.0,
-                    task.e2_eval * inner.1,
-                    task.e2_eval * inner.2,
-                )
+                (*E2_eval * inner.0, *E2_eval * inner.1, *E2_eval * inner.2)
             })
             .reduce(
-                // || (F::zero(), F::zero(), F::zero()),
+                || (F::zero(), F::zero(), F::zero()),
                 |sum, evals| (sum.0 + evals.0, sum.1 + evals.1, sum.2 + evals.2),
             )
-            .unwrap()
     };
 
     let cubic_evals = vec![cubic_evals.0, cubic_evals.1, cubic_evals.2];
