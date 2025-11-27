@@ -359,18 +359,23 @@ fn test_merge2() {
         .unwrap_or_else(|_| "4".to_string())
         .parse()
         .unwrap();
+
+    let EQ_PAIRS: usize = env::var("EQ_PAIRS")
+        .unwrap_or_else(|_| "4".to_string())
+        .parse()
+        .unwrap();
     let r = (1..R + 1).map(|i| F::from(i as u64 * 11)).collect_vec();
     let base = SplitEqPolynomial::new(&r);
 
     println!("base: E2: {:?}", base.E2);
     println!("----------------");
     for w in 0..W {
-        let eq_chunk = DistributedSplitEqPolynomial::new(&r, W_log2, w, 6);
+        let eq_chunk = DistributedSplitEqPolynomial::new(&r, W_log2, w, EQ_PAIRS);
         println!("eq_chunks[{}]: E2: {:?}", w, eq_chunk.E2);
         println!("--------");
         println!("eq_chunks[{}] merged: {:?}", w, eq_chunk.merge().Z);
         println!("--------");
-        let hack = SplitEqPolynomial::new_chunk_custom_hack(&r, W_log2, w, 6);
+        let hack = SplitEqPolynomial::new_chunk_custom_hack(&r, W_log2, w, EQ_PAIRS);
         println!("hack merged: {:?}", hack.merge().Z);
         println!("----------------");
         assert_eq!(hack.merge().Z, eq_chunk.merge().Z)
@@ -397,6 +402,7 @@ pub struct DistributedSplitEqPolynomial<F> {
     pub row_start: usize,    // global row index of E2[0]
     pub global_start: usize, // first global eq index assigned to this worker
     pub global_end: usize,   // exclusive
+    pub worker_len: usize,   // exclusive
 
     // new:
     pub row_local_start: Vec<usize>, // in *points* (eq indices), 0..local_len
@@ -454,6 +460,8 @@ impl<F: JoltField> DistributedSplitEqPolynomial<F> {
             k, global_start, global_end, wanted_len, e2_start, e2_end, e2_len
         );
 
+        let worker_len = global_end - global_start;
+
         let cols = base.E1_len;
         let local_len = global_end - global_start;
 
@@ -491,6 +499,7 @@ impl<F: JoltField> DistributedSplitEqPolynomial<F> {
             row_start,
             global_start,
             global_end,
+            worker_len,
             row_local_start,
             row_local_len,
         }
@@ -544,7 +553,7 @@ impl<F: JoltField> DistributedSplitEqPolynomial<F> {
                     .iter_mut()
                     .for_each(|eval| *eval *= scale);
             }
-            // row_start does NOT change when binding E1: we only collapsed columns.
+            // self.row_start >>= 1;
         }
 
         // One EQ variable bound
@@ -566,50 +575,54 @@ impl<F: JoltField> DistributedSplitEqPolynomial<F> {
         self.global_start = new_global_start;
         self.global_end = new_global_end;
 
-        // ---------------- recompute per-row local layout ----------------
-        //
-        // We want row_local_start / row_local_len to describe, in *current*
-        // EQ table coordinates, how this worker's slice [global_start, global_end)
-        // intersects the rows [row_start .. row_start + E2_len).
-        //
-        // This is the same logic as in `new()`, but run after each bind.
-        let cols = self.E1_len;
-        let rows = self.E2_len;
-        let local_len = self.global_end - self.global_start;
+        // self.global_start = self.global_start >> 1;
+        // self.global_end = (self.global_end + 1) >> 1;
+        // self.worker_len = (self.worker_len + 1) >> 1;
 
-        self.row_local_start.clear();
-        self.row_local_len.clear();
-        self.row_local_start.reserve(rows);
-        self.row_local_len.reserve(rows);
+        // // ---------------- recompute per-row local layout ----------------
+        // //
+        // // We want row_local_start / row_local_len to describe, in *current*
+        // // EQ table coordinates, how this worker's slice [global_start, global_end)
+        // // intersects the rows [row_start .. row_start + E2_len).
+        // //
+        // // This is the same logic as in `new()`, but run after each bind.
+        // let cols = self.E1_len;
+        // let rows = self.E2_len;
+        // let local_len = self.global_end - self.global_start;
 
-        let mut running = 0usize;
+        // self.row_local_start.clear();
+        // self.row_local_len.clear();
+        // self.row_local_start.reserve(rows);
+        // self.row_local_len.reserve(rows);
 
-        for row_offset in 0..rows {
-            let r = self.row_start + row_offset;
-            let row_first = r * cols;
-            let row_last = row_first + cols;
+        // let mut running = 0usize;
 
-            let s = self.global_start.max(row_first);
-            let e = self.global_end.min(row_last);
+        // for row_offset in 0..rows {
+        //     let r = self.row_start + row_offset;
+        //     let row_first = r * cols;
+        //     let row_last = row_first + cols;
 
-            if e <= s {
-                // this row contributes nothing to this worker
-                self.row_local_start.push(running);
-                self.row_local_len.push(0);
-                continue;
-            }
+        //     let s = self.global_start.max(row_first);
+        //     let e = self.global_end.min(row_last);
 
-            let len_pts = e - s; // number of points from this row owned by this worker
-            self.row_local_start.push(running);
-            self.row_local_len.push(len_pts);
-            running += len_pts;
-        }
+        //     if e <= s {
+        //         // this row contributes nothing to this worker
+        //         self.row_local_start.push(running);
+        //         self.row_local_len.push(0);
+        //         continue;
+        //     }
 
-        debug_assert_eq!(
-            running, local_len,
-            "inconsistent local_len after bind: running={}, local_len={}",
-            running, local_len
-        );
+        //     let len_pts = e - s; // number of points from this row owned by this worker
+        //     self.row_local_start.push(running);
+        //     self.row_local_len.push(len_pts);
+        //     running += len_pts;
+        // }
+
+        // debug_assert_eq!(
+        //     running, local_len,
+        //     "inconsistent local_len after bind: running={}, local_len={}",
+        //     running, local_len
+        // );
     }
 
     pub fn merge(&self) -> DensePolynomial<F> {
