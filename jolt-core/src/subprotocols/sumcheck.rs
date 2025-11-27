@@ -600,9 +600,8 @@ fn dense_interleaved_sumcheck_evals<F: JoltField>(
 
         // poly.par_chunks(4)
         //     .zip(E2.par_chunks(2))
-        poly.coeffs[..poly.len()]
-            .chunks(4)
-            .zip(eq_poly.E2.chunks(2))
+        poly.par_chunks(4)
+            .zip(eq_poly.E2.par_chunks(2))
             .map(|(layer_chunk, eq_chunk)| {
                 let eq_evals = {
                     let eval_point_0 = eq_chunk[0];
@@ -629,14 +628,14 @@ fn dense_interleaved_sumcheck_evals<F: JoltField>(
                 let right_eval_2 = right.1 + m_right;
                 let right_eval_3 = right_eval_2 + m_right;
 
-                println!(
-                    "E2 partial evals: {:?}",
-                    [
-                        [eq_evals.0, eq_evals.1, eq_evals.2],
-                        [left.0, left_eval_2, left_eval_3],
-                        [right.0, right_eval_2, right_eval_3]
-                    ]
-                );
+                // println!(
+                //     "E2 partial evals: {:?}",
+                //     [
+                //         [eq_evals.0, eq_evals.1, eq_evals.2],
+                //         [left.0, left_eval_2, left_eval_3],
+                //         [right.0, right_eval_2, right_eval_3]
+                //     ]
+                // );
 
                 (
                     eq_evals.0 * left.0 * right.0,
@@ -645,14 +644,12 @@ fn dense_interleaved_sumcheck_evals<F: JoltField>(
                 )
             })
             .reduce(
-                // || (F::zero(), F::zero(), F::zero()),
+                || (F::zero(), F::zero(), F::zero()),
                 |sum, evals| (sum.0 + evals.0, sum.1 + evals.1, sum.2 + evals.2),
             )
-            .unwrap()
     } else {
         let cols = eq_poly.E1_len;
         let rows = eq_poly.E2_len;
-        let local_len = eq_poly.global_end - eq_poly.global_start;
 
         let E1_evals: Vec<_> = eq_poly.E1[..eq_poly.E1_len]
             .par_chunks(2)
@@ -668,8 +665,6 @@ fn dense_interleaved_sumcheck_evals<F: JoltField>(
         #[derive(Clone, Copy)]
         struct RowTask<F> {
             coeff_start: usize,
-            coeff_end: usize,
-            chunk_size: usize,
             pair_from: usize,
             pair_to: usize,
             e2_eval: F,
@@ -679,17 +674,15 @@ fn dense_interleaved_sumcheck_evals<F: JoltField>(
         let poly_pts = poly.len() / 2;
         debug_assert!(poly.len() % 2 == 0 && poly_pts > 0);
 
-        println!("worker len: {} poly_pts: {}", eq_poly.worker_len, poly_pts);
-        // this worker is logically responsible for worker_len points
-        // but we can't exceed what poly actually has
+        println!("eq_poly.worker_len: {}", eq_poly.worker_len);
+
         let max_pts = eq_poly.worker_len; //.min(poly_pts);
         debug_assert!(max_pts > 0);
 
-        let slice_start = eq_poly.global_start;
         let mut tasks: Vec<RowTask<F>> = Vec::with_capacity(rows);
         let mut used_pts = 0usize;
 
-        println!("max_pts: {}", max_pts);
+        // println!("max_pts: {}", max_pts);
 
         for row_offset in 0..rows {
             if used_pts == max_pts {
@@ -703,48 +696,27 @@ fn dense_interleaved_sumcheck_evals<F: JoltField>(
             let row_first = r * cols;
             let row_last = row_first + cols;
 
-            // intersect this row with [slice_start, slice_start + max_pts)
-            let s = slice_start.max(row_first);
-            let e = (slice_start + max_pts).min(row_last);
+            // // intersect this row with [slice_start, slice_start + max_pts)
+            let s = eq_poly.global_start.max(row_first);
+            let e = (eq_poly.global_start + max_pts).min(row_last);
 
             if e <= s {
                 continue;
             }
 
             let row_pts = e - s;
-            let row_pairs = row_pts / 2;
-
-            // debug_assert_eq!(
-            //     row_pts % 2,
-            //     0,
-            //     "row_pts must be even for interleaved pairs (row_pts={})",
-            //     row_pts
-            // );
-
             let coeff_start = 2 * used_pts;
-            let coeff_end = coeff_start + 2 * row_pts;
-            // assert!(
-            //     coeff_end <= poly.len(),
-            //     "row {}: coeff_end {} out of {} (used_pts={}, row_pts={})",
-            //     row_offset,
-            //     coeff_end,
-            //     poly.len(),
-            //     used_pts,
-            //     row_pts
-            // );
+            // let col_from = s - row_first;
+            // let col_to = e - row_first;
 
-            let col_from = s - row_first;
-            let col_to = e - row_first;
-            // debug_assert!(col_from % 2 == 0 && col_to % 2 == 0);
+            // let pair_from = col_from / 2;
+            // let pair_to = col_to / 2;
 
-            let pair_from = col_from / 2;
-            let pair_to = col_to / 2;
-            // debug_assert_eq!(pair_to - pair_from, row_pairs);
+            let pair_from = (eq_poly.global_start.max(row_first) - row_first) / 2; // col_from
+            let pair_to = (eq_poly.global_end.min(row_last) - row_first) / 2;
 
             tasks.push(RowTask {
                 coeff_start,
-                coeff_end,
-                chunk_size: coeff_end - coeff_start,
                 pair_from,
                 pair_to,
                 e2_eval,
@@ -753,25 +725,27 @@ fn dense_interleaved_sumcheck_evals<F: JoltField>(
             used_pts += row_pts;
         }
 
-        // assert_eq!(
-        //     used_pts, poly_pts,
-        //     "mismatch between consumed points and poly_pts (used={}, poly_pts={})",
-        //     used_pts, poly_pts
-        // );
+        let _chunk_size = (poly.len().next_power_of_two() / eq_poly.E2_len).max(1);
+        println!("_chunk_size: {}", _chunk_size);
 
         // parallel Dao–Thaler evaluation over row tasks
         tasks
             .iter()
             .map(|task| {
-                println!(
-                    "poly.coeffs len {} coeff_start={} coeff_end={}",
-                    poly.coeffs.len(),
-                    task.coeff_start,
-                    task.coeff_end
-                );
                 if task.coeff_start >= poly.len() {
+                    println!(
+                        "skipping: E1_evals[{:?}] poly[{:?}]",
+                        task.pair_from..task.pair_to,
+                        task.coeff_start..poly.len(),
+                    );
                     return (F::zero(), F::zero(), F::zero());
                 }
+                println!(
+                    "E1_evals[{:?}] poly[{:?}] Echunk={}",
+                    task.pair_from..task.pair_to,
+                    task.coeff_start..poly.len(),
+                    poly.len() - task.coeff_start
+                );
                 let row_coeffs = &poly.coeffs[task.coeff_start..poly.len()];
                 let mut inner = (F::zero(), F::zero(), F::zero());
 
@@ -779,7 +753,6 @@ fn dense_interleaved_sumcheck_evals<F: JoltField>(
                     .iter()
                     .zip(row_coeffs.chunks(4))
                 {
-                    println!("coeffs chunk: {:?}", chunk);
                     let left = (
                         *chunk.first().unwrap_or(&F::zero()),
                         *chunk.get(2).unwrap_or(&F::zero()),
@@ -798,19 +771,19 @@ fn dense_interleaved_sumcheck_evals<F: JoltField>(
                     let right_eval_2 = right.1 + m_right;
                     let right_eval_3 = right_eval_2 + m_right;
 
-                    println!(
-                        "E1 partial evals: {:?}",
-                        [
-                            [
-                                E1_evals.0 * task.e2_eval,
-                                E1_evals.1 * task.e2_eval,
-                                E1_evals.2 * task.e2_eval
-                            ],
-                            [left.0, left_eval_2, left_eval_3],
-                            [right.0, right_eval_2, right_eval_3]
-                        ]
-                    );
-                    println!("------");
+                    // println!(
+                    //     "E1 partial evals: {:?}",
+                    //     [
+                    //         [
+                    //             E1_evals.0 * task.e2_eval,
+                    //             E1_evals.1 * task.e2_eval,
+                    //             E1_evals.2 * task.e2_eval
+                    //         ],
+                    //         [left.0, left_eval_2, left_eval_3],
+                    //         [right.0, right_eval_2, right_eval_3]
+                    //     ]
+                    // );
+                    // println!("------");
 
                     inner.0 += E1_evals.0 * left.0 * right.0;
                     inner.1 += E1_evals.1 * left_eval_2 * right_eval_2;
