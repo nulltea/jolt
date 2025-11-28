@@ -245,46 +245,9 @@ impl<F: JoltField> SplitEqPolynomial<F> {
         }
     }
 
-    pub fn new_chunk(w: &[F], log_chunks: usize, k: usize) -> Self {
-        let base = Self::new(w);
-        let n = 1usize << log_chunks;
-        let rows = base.E2_len;
-        let rows_per = (rows + n - 1) / n;
-        let i0 = core::cmp::min(k * rows_per, rows);
-        let i1 = core::cmp::min((k + 1) * rows_per, rows);
+    pub fn new_bound(E1: Vec<F>, E2: Vec<F>) -> Self {
         Self {
-            num_vars: w.len() - log_chunks,
-            E1: base.E1,
-            E1_len: base.E1_len,
-            E2: base.E2[i0..i1].to_vec(),
-            E2_len: i1 - i0,
-        }
-    }
-
-    pub fn new_chunk_custom_hack(w: &[F], log_chunks: usize, k: usize, eq_pairs: usize) -> Self {
-        let num_vars = w.len() - log_chunks;
-        let rows = 1 << w.len();
-        let offset = eq_pairs * k;
-        let cutoff = if k < (1 << log_chunks) - 1 {
-            eq_pairs * (k + 1)
-        } else {
-            rows
-        };
-        // Hack put entire chunk in E2
-        let E2 = EqPolynomial::evals(w)[offset..cutoff].to_vec();
-
-        Self {
-            num_vars,
-            E1: vec![F::ZERO],
-            E1_len: 1,
-            E2_len: E2.len(),
-            E2,
-        }
-    }
-
-    pub fn new_bound(E1: Vec<F>, E2: Vec<F>, num_vars: usize) -> Self {
-        Self {
-            num_vars,
+            num_vars: (E1.len() * E2.len()).log_2(),
             E1_len: E1.len(),
             E2_len: E2.len(),
             E1,
@@ -345,46 +308,6 @@ impl<F: JoltField> SplitEqPolynomial<F> {
             DensePolynomial::new_padded(merged)
         }
     }
-}
-
-#[test]
-fn test_merge2() {
-    type F = ark_bn254::Fr;
-    let W: usize = env::var("NUM_WORKERS")
-        .unwrap_or_else(|_| "2".to_string())
-        .parse()
-        .unwrap();
-    let W_log2 = W.log_2();
-    let R: usize = env::var("R")
-        .unwrap_or_else(|_| "4".to_string())
-        .parse()
-        .unwrap();
-
-    let EQ_PAIRS: usize = env::var("EQ_PAIRS")
-        .unwrap_or_else(|_| "4".to_string())
-        .parse()
-        .unwrap();
-    let r = (1..R + 1).map(|i| F::from(i as u64 * 11)).collect_vec();
-    let base = SplitEqPolynomial::new(&r);
-
-    println!("base: E2: {:?}", base.E2);
-    println!("----------------");
-    for w in 0..W {
-        let eq_chunk = DistributedSplitEqPolynomial::new(&r, W_log2, w, EQ_PAIRS);
-        println!("eq_chunks[{}]: E2: {:?}", w, eq_chunk.E2);
-        println!("--------");
-        println!("eq_chunks[{}] merged: {:?}", w, eq_chunk.merge().Z);
-        println!("--------");
-        let hack = SplitEqPolynomial::new_chunk_custom_hack(&r, W_log2, w, EQ_PAIRS);
-        println!("hack merged: {:?}", hack.merge().Z);
-        println!("----------------");
-        assert_eq!(hack.merge().Z, eq_chunk.merge().Z)
-    }
-
-    // let chunk0 = chunk2.merge();
-    // let hack = hack[1].merge();
-
-    // assert_eq!(chunk0.Z, hack.Z);
 }
 
 /// A SplitEqPolynomial chunk assigned to a single worker, with:
