@@ -110,9 +110,8 @@ impl<const C: usize, F: JoltField, T: CanonicalSerialize + CanonicalDeserialize 
     }
 }
 
-impl<
-        T: CanonicalSerialize + CanonicalDeserialize,
-    > StructuredPolynomialData<T> for InstructionLookupStuff<T>
+impl<T: CanonicalSerialize + CanonicalDeserialize> StructuredPolynomialData<T>
+    for InstructionLookupStuff<T>
 {
     fn read_write_values(&self) -> Vec<&T> {
         self.dim

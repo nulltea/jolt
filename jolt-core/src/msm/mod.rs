@@ -195,7 +195,7 @@ where
                 use_icicle,
             ),
             MultilinearPolynomial::U8Scalars(poly) => {
-                Self::msm_u8(bases, &poly.coeffs, max_num_bits)
+                Self::msm_u8(bases, poly.coeffs_ref(), max_num_bits)
             }
             MultilinearPolynomial::U16Scalars(poly) => {
                 Self::msm_u16(bases, gpu_bases, &poly.coeffs, max_num_bits, use_icicle)
