@@ -594,6 +594,7 @@ impl<F: JoltField, ProofTranscript: Transcript> SumcheckInstanceProof<F, ProofTr
 /// - `eq_poly` is either:
 ///     * factored as E2 * E1 (E1_len > 1, Dao–Thaler mode), or
 ///     * collapsed into E2 only (E1_len == 1, linear-time mode).
+#[cfg(test)]
 fn dense_interleaved_sumcheck_evals<F: JoltField>(
     poly: &DenseInterleavedPolynomial<F>,
     eq_poly: &DistributedSplitEqPolynomial<F>,
