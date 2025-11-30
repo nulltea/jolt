@@ -1097,9 +1097,12 @@ fn sparse_interleaved_sumcheck_evals<F: JoltField>(
         // This is a more complicated version of the `else` case in
         // `DenseInterleavedPolynomial::compute_cubic`. Read that one first.
 
+        let E1_len = eq_poly.E1_len;
+        let E2_len = eq_poly.E2_len;
+
         // We start by computing the E1 evals:
         // (1 - j) * E1[0, x1] + j * E1[1, x1]
-        let E1_evals: Vec<_> = eq_poly.E1[..eq_poly.E1_len]
+        let E1_evals: Vec<_> = eq_poly.E1[..E1_len]
             .par_chunks(2)
             .map(|E1_chunk| {
                 let eval_point_0 = E1_chunk[0];
@@ -1109,20 +1112,19 @@ fn sparse_interleaved_sumcheck_evals<F: JoltField>(
                 [eval_point_0, eval_point_2, eval_point_3]
             })
             .collect();
-        // Now compute \sum_{x1} ((1 - j) * E1[0, x1] + j * E1[1, x1])
-        let E1_eval_sums = E1_evals
-            .par_iter()
-            .fold(
-                || [F::zero(); 3],
-                |sum, evals| [sum[0] + evals[0], sum[1] + evals[1], sum[2] + evals[2]],
-            )
-            .reduce(
-                || [F::zero(); 3],
-                |sum, evals| [sum[0] + evals[0], sum[1] + evals[1], sum[2] + evals[2]],
-            );
 
         let num_x1_bits = eq_poly.E1_len.log_2() - 1;
         let x1_bitmask = (1 << num_x1_bits) - 1;
+
+        let slice_start = eq_poly.global_start;
+
+        // Only first dense_len/4 points are "active"; everything beyond is padding.
+        let slice_end = eq_poly.global_start + core::cmp::min(eq_poly.len, poly.dense_len / 2);
+
+        let E2_local_bound = slice_end
+            .div_ceil(E1_len) // first row index strictly after slice_end
+            .saturating_sub(eq_poly.row_start)
+            .min(eq_poly.E2_len);
 
         // Iterate over the non-one coefficients and compute the deltas (relative to
         // what the cubic would be if all the coefficients were ones).
@@ -1130,19 +1132,117 @@ fn sparse_interleaved_sumcheck_evals<F: JoltField>(
             .coeffs
             .par_iter()
             .flat_map(|segment| {
+                println!("------- segment -------");
+
                 segment
                     .par_chunk_by(|a, b| {
-                        // Group by x2
-                        let a_x2 = (a.index / 4) >> num_x1_bits;
-                        let b_x2 = (b.index / 4) >> num_x1_bits;
-                        a_x2 == b_x2
+                        // Group by *global* row index (after accounting for global_start
+                        // and the fact that each 4-coeff block corresponds to 2 Eq points).
+                        let a_block = a.index / 4;
+                        let b_block = b.index / 4;
+
+                        let a_eq = slice_start + 2 * a_block;
+                        let b_eq = slice_start + 2 * b_block;
+
+                        let a_row = a_eq / E1_len;
+                        let b_row = b_eq / E1_len;
+
+                        a_row == b_row
                     })
                     .map(|chunk| {
                         let mut inner_sum = [F::zero(); 3];
-                        let x2 = (chunk[0].index / 4) >> num_x1_bits;
+                        if chunk.is_empty() {
+                            return [F::zero(); 3];
+                        }
+
+                        println!(
+                            "chunk[0].index / 4: {} num_x1_bits {}",
+                            chunk[0].index / 4,
+                            num_x1_bits
+                        );
+                        // Global row index for this chunk.
+                        // let E2_i = (chunk[0].index / 4) >> num_x1_bits;
+                        let first_block = chunk[0].index / 4;
+                        let eq0 = slice_start + 2 * first_block;
+                        let r = eq0 / E1_len; // global row index
+
+                        // Map to local E2 index.
+                        if r < eq_poly.row_start {
+                            // This row belongs to a previous worker.
+                            return [F::zero(); 3];
+                        }
+                        let E2_i = r - eq_poly.row_start;
+                        if E2_i > E2_local_bound {
+                            println!("E2_i {} > E2_local_bound {}", E2_i, E2_local_bound);
+                            return [F::zero(); 3];
+                        }
+                        println!(
+                            "eq_poly.row_start {} E2_i: {} E2_local_bound {}",
+                            eq_poly.row_start, E2_i, E2_local_bound
+                        );
+
+                        // Global row index in the full Eq table.
+                        let r = eq_poly.row_start + E2_i;
+
+                        // Global Eq index range covered by this row: [row_first, row_last).
+                        let row_first = r * E1_len;
+                        let row_last = row_first + E1_len;
+
+                        // Intersection with the worker’s assigned slice [global_start, worker_end),
+                        // expressed in global Eq indices.
+                        let eq_first = slice_start.max(row_first);
+                        let eq_last = (slice_start + eq_poly.len).min(row_last);
+
+                        // We expect this row to intersect the slice if it is within E2_local_bound.
+                        debug_assert!(eq_last > eq_first);
+
+                        // Column offsets inside the row (in Eq points).
+                        let col_from = eq_first - row_first;
+                        let col_to = eq_last - row_first;
+
+                        // Each Dao–Thaler E1 entry spans 2 Eq points; enforce alignment.
+                        debug_assert!(
+                            col_from % 2 == 0 && col_to % 2 == 0,
+                            "misaligned Eq slice within row"
+                        );
+
+                        // Range of C-indices (pairs) in this row that belong to this worker.
+                        let E1_from = col_from / 2;
+                        let E1_to = col_to / 2;
+
+                        // Local Eq point index inside this worker’s slice:
+                        //
+                        //   local_point_idx = eq_first - global_start
+                        //
+                        // Each point corresponds to 2 coefficients in the interleaved polynomial.
+                        let poly_from = (eq_first - eq_poly.global_start) * 2;
+                        // assert!(poly_from < poly.len(), "coeff_start out of bounds");
+
+                        println!("chunk: {} poly_from: {}", chunk.len(), poly_from);
+
+                        let E2_eval = eq_poly.E2[E2_i];
 
                         for sparse_block in chunk.chunk_by(|x, y| x.index / 4 == y.index / 4) {
                             let block_index = sparse_block[0].index / 4;
+
+                            // Global Eq index for this block's pair (first Eq point of the pair).
+                            let eq = slice_start + 2 * block_index;
+
+                            // Skip blocks outside this row's [eq_first, eq_last) or beyond active slice.
+                            if eq < eq_first || eq >= eq_last {
+                                continue;
+                            }
+
+                            // Column inside the row.
+                            let col = eq - row_first;
+                            debug_assert!(col < E1_len);
+                            debug_assert!(col % 2 == 0, "block not aligned to E1 pair");
+
+                            // Pair index for this (i_C) inside the row.
+                            let E1_i = (col / 2) as usize;
+                            debug_assert!(E1_i < E1_evals.len());
+
+                            // Reconstruct full [L0, R0, L1, R1] block with ones default.
                             let mut block = [F::one(); 4];
                             for coeff in sparse_block {
                                 block[coeff.index % 4] = coeff.value;
@@ -1160,23 +1260,24 @@ fn sparse_interleaved_sumcheck_evals<F: JoltField>(
                             let right_eval_2 = right.1 + m_right;
                             let right_eval_3 = right_eval_2 + m_right;
 
-                            let x1 = block_index & x1_bitmask;
+                            let e1 = E1_evals[E1_i];
+
                             let delta = [
-                                E1_evals[x1][0]
-                                    .mul_0_optimized(left.0.mul_1_optimized(right.0) - F::one()),
-                                E1_evals[x1][1] * (left_eval_2 * right_eval_2 - F::one()),
-                                E1_evals[x1][2] * (left_eval_3 * right_eval_3 - F::one()),
+                                e1[0].mul_0_optimized(left.0.mul_1_optimized(right.0) - F::one()),
+                                e1[1] * (left_eval_2 * right_eval_2 - F::one()),
+                                e1[2] * (left_eval_3 * right_eval_3 - F::one()),
                             ];
 
                             println!(
                                 "E1 deltas: {:?}",
                                 [
-                                    E1_evals[x1].map(|e| e * eq_poly.E2[x2]),
+                                    [e1[0] * E2_eval, e1[1] * E2_eval, e1[2] * E2_eval],
                                     [left.0, left_eval_2, left_eval_3],
                                     [right.0, right_eval_2, right_eval_3]
                                 ]
                             );
                             println!("-------");
+
                             inner_sum[0] += delta[0];
                             inner_sum[1] += delta[1];
                             inner_sum[2] += delta[2];
@@ -1185,9 +1286,9 @@ fn sparse_interleaved_sumcheck_evals<F: JoltField>(
                         println!("--------------");
 
                         [
-                            eq_poly.E2[x2] * inner_sum[0],
-                            eq_poly.E2[x2] * inner_sum[1],
-                            eq_poly.E2[x2] * inner_sum[2],
+                            eq_poly.E2[E2_i] * inner_sum[0],
+                            eq_poly.E2[E2_i] * inner_sum[1],
+                            eq_poly.E2[E2_i] * inner_sum[2],
                         ]
                     })
             })
@@ -1196,89 +1297,54 @@ fn sparse_interleaved_sumcheck_evals<F: JoltField>(
                 |sum, evals| [sum[0] + evals[0], sum[1] + evals[1], sum[2] + evals[2]],
             );
 
-        println!("deltas aggr: {:?}", deltas);
+        // println!("deltas aggr: {:?}", deltas);
         println!("-------");
 
-        // The cubic evals assuming all the coefficients are ones is affected by the
-        // `dense_len`, since we implicitly 0-pad the `dense_len` to a power of 2.
-        //
-        // As a refresher, the cubic evals we're computing are:
-        //
-        // \sum_{x2} E2[x2] * (\sum_{x1} ((1 - j) * E1[0, x1] + j * E1[1, x1]) * \prod_k ((1 - j) * P_k(0 || x1 || x2) + j * P_k(1 || x1 || x2)))
-        let evals_assuming_all_ones = if poly.dense_len.is_power_of_two() {
-            // If `dense_len` is a power of 2, there is no 0-padding.
-            //
-            // So we have:
-            // \sum_{x2} (E2[x2] * (\sum_{x1} ((1 - j) * E1[0, x1] + j * E1[1, x1]) * 1))
-            //   = \sum_{x2} (E2[x2] * \sum_{x1} E1_evals[x1])
-            //   = (\sum_{x2} E2[x2]) * (\sum_{x1} E1_evals[x1])
-            //   = 1 * E1_eval_sums
-            println!("E1_eval_sums: {:?}", E1_eval_sums);
-            println!("-------");
+        let evals_assuming_all_ones = eq_poly.E2[..E2_local_bound]
+            .par_iter()
+            .enumerate()
+            .map(|(E2_i, E2_eval)| {
+                // Global row index in the full Eq table.
+                let r = eq_poly.row_start + E2_i;
 
-            if worker == 0 {
-                E1_eval_sums
-            } else {
-                [F::zero(); 3]
-            }
-        } else {
-            let chunk_size = poly.dense_len.next_power_of_two() / eq_poly.E2_len;
-            let num_all_one_chunks = poly.dense_len / chunk_size;
-            let E2_sum: F = eq_poly.E2[..num_all_one_chunks].iter().sum();
-            if poly.dense_len % chunk_size == 0 {
-                // If `dense_len` isn't a power of 2 but evenly divides `chunk_size`,
-                // that means that for the last values of x2, we have:
-                //   (1 - j) * P_k(0 || x1 || x2) + j * P_k(1 || x1 || x2)) = 0
-                // due to the 0-padding.
-                //
-                // This makes the entire inner sum 0 for those values of x2.
-                // So we can simply sum over E2 for the _other_ values of x2, and
-                // multiply by `E1_eval_sums`.
+                // Global Eq index range covered by this row: [row_first, row_last).
+                let row_first = r * E1_len;
+                let row_last = row_first + E1_len;
 
-                println!(
-                    "Eq all ones % chunk_size: {:?}",
-                    E1_eval_sums.map(|e| e * E2_sum)
+                // Intersection with the worker’s assigned slice [global_start, worker_end),
+                // expressed in global Eq indices.
+                let eq_first = eq_poly.global_start.max(row_first);
+                let eq_last = (eq_poly.global_start + eq_poly.len()).min(row_last);
+
+                // We expect this row to intersect the slice if it is within E2_local_bound.
+                debug_assert!(eq_last > eq_first);
+
+                // Column offsets inside the row (in Eq points).
+                let col_from = eq_first - row_first;
+                let col_to = eq_last - row_first; //.min(E1_evals.len());
+
+                // Each Dao–Thaler E1 entry spans 2 Eq points; enforce alignment.
+                debug_assert!(
+                    col_from % 2 == 0 && col_to % 2 == 0,
+                    "misaligned Eq slice within row"
                 );
-                println!("-------");
 
-                E1_eval_sums.map(|e| e * E2_sum)
-            } else {
-                // If `dense_len` isn't a power of 2 and doesn't divide `chunk_size`,
-                // the last nonzero "chunk" will have (self.dense_len % chunk_size) ones,
-                // followed by (chunk_size - self.dense_len % chunk_size) zeros,
-                // e.g. 1 1 1 1 1 1 1 1 0 0 0 0
-                //
-                // This handles this last chunk:
-                let last_chunk_evals = E1_evals[..(poly.dense_len % chunk_size) / 4]
-                    .par_iter()
-                    .fold(
-                        || [F::zero(); 3],
-                        |sum, evals| [sum[0] + evals[0], sum[1] + evals[1], sum[2] + evals[2]],
-                    )
-                    .reduce(
-                        || [F::zero(); 3],
-                        |sum, evals| [sum[0] + evals[0], sum[1] + evals[1], sum[2] + evals[2]],
-                    );
+                // Range of C-indices (pairs) in this row that belong to this worker.
+                let E1_from = col_from / 2;
+                let E1_to = col_to / 2;
 
-                println!(
-                    "Eq all ones !% chunk_size: {:?}",
-                    [
-                        E2_sum * E1_eval_sums[0]
-                            + eq_poly.E2[num_all_one_chunks] * last_chunk_evals[0],
-                        E2_sum * E1_eval_sums[1]
-                            + eq_poly.E2[num_all_one_chunks] * last_chunk_evals[1],
-                        E2_sum * E1_eval_sums[2]
-                            + eq_poly.E2[num_all_one_chunks] * last_chunk_evals[2],
-                    ]
-                );
-                println!("-------");
-                [
-                    E2_sum * E1_eval_sums[0] + eq_poly.E2[num_all_one_chunks] * last_chunk_evals[0],
-                    E2_sum * E1_eval_sums[1] + eq_poly.E2[num_all_one_chunks] * last_chunk_evals[1],
-                    E2_sum * E1_eval_sums[2] + eq_poly.E2[num_all_one_chunks] * last_chunk_evals[2],
-                ]
-            }
-        };
+                let evals = E1_evals[E1_from..E1_to]
+                    .iter()
+                    .copied()
+                    .reduce(|sum, evals| [sum[0] + evals[0], sum[1] + evals[1], sum[2] + evals[2]])
+                    .unwrap_or([F::zero(); 3]);
+                evals.map(|x| x * *E2_eval)
+            })
+            .reduce(
+                || [F::zero(); 3],
+                |sum, evals| [sum[0] + evals[0], sum[1] + evals[1], sum[2] + evals[2]],
+            );
+        // println!("evals_assuming_all_ones: {:?}", evals_assuming_all_ones);
 
         println!("--------------");
 
@@ -2632,7 +2698,7 @@ fn test_distributed_sparse_gkr_simulation() {
         .unwrap();
 
     let mut rng = test_rng();
-    let mut flags = (0..N / 2)
+    let mut flags = (0..N.div_ceil(2))
         .flat_map(|_| {
             let flags = (0..chunk_size)
                 .filter_map(|i| {
@@ -2646,12 +2712,14 @@ fn test_distributed_sparse_gkr_simulation() {
             [flags.clone(), flags]
         })
         .collect_vec();
+    println!("flags: {:?}", flags.len());
     let (w_fingerprints, w_flags) = debug_workers_data(chunk_size, N, W)
         .into_iter()
         .map(|w| {
             let fingerprints = w.chunks(chunk_size).map(|c| c.to_vec()).collect_vec();
+            println!("fingerprints: {:?}", fingerprints.len());
             let flags = flags.drain(..fingerprints.len()).collect_vec();
-            let flags = flags.chunks(2).map(|c| c[1].clone()).collect_vec();
+            let flags = flags.chunks(2).map(|c| c[0].clone()).collect_vec();
             (fingerprints, flags)
         })
         .unzip();
