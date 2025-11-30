@@ -355,7 +355,7 @@ pub struct DistributedSplitEqPolynomial<F> {
     ///
     /// This is the number of Eq points this worker logically owns, even if after binding
     /// the attached polynomial P only covers a prefix of them.
-    pub worker_len: usize,
+    pub len: usize,
 }
 
 impl<F: JoltField> DistributedSplitEqPolynomial<F> {
@@ -414,7 +414,7 @@ impl<F: JoltField> DistributedSplitEqPolynomial<F> {
         let E2 = base.E2[e2_start..e2_end].to_vec();
 
         // Worker’s logical Eq slice length in points.
-        let worker_len = global_end - global_start;
+        let len = global_end - global_start;
 
         Self {
             num_vars: w.len() - log_chunks,
@@ -425,7 +425,7 @@ impl<F: JoltField> DistributedSplitEqPolynomial<F> {
             row_start,
             global_start,
             global_end,
-            worker_len,
+            len,
         }
     }
 
@@ -438,7 +438,7 @@ impl<F: JoltField> DistributedSplitEqPolynomial<F> {
     pub fn len(&self) -> usize {
         // Number of Eq points in this worker's contiguous slice
         // [global_start, global_end), after any bindings.
-        self.worker_len
+        self.len
     }
 
     /// Bind one sumcheck variable (same order/convention as `SplitEqPolynomial::bind`).
@@ -509,7 +509,7 @@ impl<F: JoltField> DistributedSplitEqPolynomial<F> {
         self.global_end = (self.global_end + 1) >> 1;
 
         // Length of this worker’s Eq slice in points also halves, rounded up.
-        self.worker_len = (self.worker_len + 1) >> 1;
+        self.len = (self.len + 1) >> 1;
     }
 
     pub fn merge(&self) -> DensePolynomial<F> {
