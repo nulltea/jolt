@@ -214,8 +214,6 @@ impl<F: JoltField, ProofTranscript: Transcript> BatchedCubicSumcheck<F, ProofTra
         level = "trace"
     )]
     fn compute_cubic(&self, eq_poly: &SplitEqPolynomial<F>, previous_round_claim: F) -> UniPoly<F> {
-        println!("poly: {:?}", &self.coeffs[..self.len]);
-        println!("eq_poly: E1: {:?} E2: {:?}", eq_poly.E1, eq_poly.E2);
         // We use the Dao-Thaler optimization for the EQ polynomial, so there are two cases we
         // must handle. For details, refer to Section 2.2 of https://eprint.iacr.org/2024/1210.pdf
         let cubic_evals = if eq_poly.E1_len == 1 {
@@ -253,15 +251,6 @@ impl<F: JoltField, ProofTranscript: Transcript> BatchedCubicSumcheck<F, ProofTra
 
                     let right_eval_2 = right.1 + m_right;
                     let right_eval_3 = right_eval_2 + m_right;
-
-                    println!(
-                        "dense E2 partial evals: {:?}",
-                        [
-                            [eq_evals.0, eq_evals.1, eq_evals.2],
-                            [left.0, left_eval_2, left_eval_3],
-                            [right.0, right_eval_2, right_eval_3]
-                        ]
-                    );
 
                     (
                         eq_evals.0 * left.0 * right.0,
@@ -327,19 +316,6 @@ impl<F: JoltField, ProofTranscript: Transcript> BatchedCubicSumcheck<F, ProofTra
 
                         let right_eval_2 = right.1 + m_right;
                         let right_eval_3 = right_eval_2 + m_right;
-
-                        println!(
-                            "dense E1 partial evals: {:?}",
-                            [
-                                [
-                                    E1_evals.0 * *E2_eval,
-                                    E1_evals.1 * *E2_eval,
-                                    E1_evals.2 * *E2_eval
-                                ],
-                                [left.0, left_eval_2, left_eval_3],
-                                [right.0, right_eval_2, right_eval_3]
-                            ]
-                        );
 
                         inner_sum.0 += E1_evals.0 * left.0 * right.0;
                         inner_sum.1 += E1_evals.1 * left_eval_2 * right_eval_2;

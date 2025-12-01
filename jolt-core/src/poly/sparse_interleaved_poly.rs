@@ -464,15 +464,12 @@ impl<F: JoltField, ProofTranscript: Transcript> BatchedCubicSumcheck<F, ProofTra
     )]
     fn compute_cubic(&self, eq_poly: &SplitEqPolynomial<F>, previous_round_claim: F) -> UniPoly<F> {
         if let Some(coalesced) = &self.coalesced {
-            println!("coalesced");
             return BatchedCubicSumcheck::<F, ProofTranscript>::compute_cubic(
                 coalesced,
                 eq_poly,
                 previous_round_claim,
             );
         }
-
-        println!("sparse");
 
         // We use the Dao-Thaler optimization for the EQ polynomial, so there are two cases we
         // must handle. For details, refer to Section 2.2 of https://eprint.iacr.org/2024/1210.pdf
@@ -534,15 +531,6 @@ impl<F: JoltField, ProofTranscript: Transcript> BatchedCubicSumcheck<F, ProofTra
 
                             let eq_evals = eq_evals[block_index];
 
-                            println!(
-                                "E2 partial evals: {:?}",
-                                [
-                                    [eq_evals.0, eq_evals.1, eq_evals.2],
-                                    [left.0, left_eval_2, left_eval_3],
-                                    [right.0, right_eval_2, right_eval_3]
-                                ]
-                            );
-                            println!("-------");
                             (
                                 eq_evals
                                     .0
@@ -556,7 +544,6 @@ impl<F: JoltField, ProofTranscript: Transcript> BatchedCubicSumcheck<F, ProofTra
                     || (F::zero(), F::zero(), F::zero()),
                     |sum, evals| (sum.0 + evals.0, sum.1 + evals.1, sum.2 + evals.2),
                 );
-            println!("--------------");
             (
                 eq_eval_sums.0 + deltas.0,
                 eq_eval_sums.1 + deltas.1,
@@ -638,24 +625,10 @@ impl<F: JoltField, ProofTranscript: Transcript> BatchedCubicSumcheck<F, ProofTra
                                     E1_evals[x1].2 * (left_eval_3 * right_eval_3 - F::one()),
                                 );
 
-                                println!(
-                                    "E1 deltas: {:?}",
-                                    [
-                                        [
-                                            E1_evals[x1].0 * eq_poly.E2[x2],
-                                            E1_evals[x1].1 * eq_poly.E2[x2],
-                                            E1_evals[x1].2 * eq_poly.E2[x2]
-                                        ],
-                                        [left.0, left_eval_2, left_eval_3],
-                                        [right.0, right_eval_2, right_eval_3]
-                                    ]
-                                );
-                                println!("-------");
                                 inner_sum.0 += delta.0;
                                 inner_sum.1 += delta.1;
                                 inner_sum.2 += delta.2;
                             }
-                            println!("--------------");
 
                             (
                                 eq_poly.E2[x2] * inner_sum.0,
@@ -668,9 +641,6 @@ impl<F: JoltField, ProofTranscript: Transcript> BatchedCubicSumcheck<F, ProofTra
                     || (F::zero(), F::zero(), F::zero()),
                     |sum, evals| (sum.0 + evals.0, sum.1 + evals.1, sum.2 + evals.2),
                 );
-
-            println!("deltas aggr: {:?}", [deltas.0, deltas.1, deltas.2]);
-            println!("-------");
 
             // The cubic evals assuming all the coefficients are ones is affected by the
             // `dense_len`, since we implicitly 0-pad the `dense_len` to a power of 2.
@@ -686,11 +656,6 @@ impl<F: JoltField, ProofTranscript: Transcript> BatchedCubicSumcheck<F, ProofTra
                 //   = \sum_{x2} (E2[x2] * \sum_{x1} E1_evals[x1])
                 //   = (\sum_{x2} E2[x2]) * (\sum_{x1} E1_evals[x1])
                 //   = 1 * E1_eval_sums
-                println!(
-                    "E1_eval_sums: {:?}",
-                    [E1_eval_sums.0, E1_eval_sums.1, E1_eval_sums.2]
-                );
-                println!("-------");
                 E1_eval_sums
             } else {
                 let chunk_size = self.dense_len.next_power_of_two() / eq_poly.E2_len;
@@ -705,17 +670,6 @@ impl<F: JoltField, ProofTranscript: Transcript> BatchedCubicSumcheck<F, ProofTra
                     // This makes the entire inner sum 0 for those values of x2.
                     // So we can simply sum over E2 for the _other_ values of x2, and
                     // multiply by `E1_eval_sums`.
-
-                    println!(
-                        "Eq all ones % chunk_size: {:?}",
-                        [
-                            E2_sum * E1_eval_sums.0,
-                            E2_sum * E1_eval_sums.1,
-                            E2_sum * E1_eval_sums.2,
-                        ]
-                    );
-                    println!("-------");
-
                     (
                         E2_sum * E1_eval_sums.0,
                         E2_sum * E1_eval_sums.1,
@@ -739,18 +693,6 @@ impl<F: JoltField, ProofTranscript: Transcript> BatchedCubicSumcheck<F, ProofTra
                             |sum, evals| (sum.0 + evals.0, sum.1 + evals.1, sum.2 + evals.2),
                         );
 
-                    println!(
-                        "Eq all ones !% chunk_size: {:?}",
-                        [
-                            E2_sum * E1_eval_sums.0
-                                + eq_poly.E2[num_all_one_chunks] * last_chunk_evals.0,
-                            E2_sum * E1_eval_sums.1
-                                + eq_poly.E2[num_all_one_chunks] * last_chunk_evals.1,
-                            E2_sum * E1_eval_sums.2
-                                + eq_poly.E2[num_all_one_chunks] * last_chunk_evals.2,
-                        ]
-                    );
-                    println!("-------");
                     (
                         E2_sum * E1_eval_sums.0
                             + eq_poly.E2[num_all_one_chunks] * last_chunk_evals.0,
@@ -762,21 +704,12 @@ impl<F: JoltField, ProofTranscript: Transcript> BatchedCubicSumcheck<F, ProofTra
                 }
             };
 
-            println!("--------------");
-
             (
                 evals_assuming_all_ones.0 + deltas.0,
                 evals_assuming_all_ones.1 + deltas.1,
                 evals_assuming_all_ones.2 + deltas.2,
             )
         };
-
-        // println!("-------");
-        // println!(
-        //     "eval points: {:?}",
-        //     [cubic_evals.0, cubic_evals.1, cubic_evals.2,]
-        // );
-        // println!("--------------");
 
         let cubic_evals = [
             cubic_evals.0,

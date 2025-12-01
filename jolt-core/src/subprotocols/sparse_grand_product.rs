@@ -111,7 +111,7 @@ impl<F: JoltField> BatchedGrandProductToggleLayer<F> {
 }
 
 impl<F: JoltField> BatchedGrandProductToggleLayer<F> {
-    fn new(flag_indices: Vec<Vec<usize>>, fingerprints: Vec<Vec<F>>) -> Self {
+    pub fn new(flag_indices: Vec<Vec<usize>>, fingerprints: Vec<Vec<F>>) -> Self {
         let layer_len = 2 * fingerprints[0].len();
         let batched_layer_len = fingerprints.len() * layer_len;
         Self {
@@ -137,7 +137,7 @@ impl<F: JoltField> BatchedGrandProductToggleLayer<F> {
         name = "BatchedGrandProductToggleLayer::layer_output",
         level = "trace"
     )]
-    fn layer_output(&self) -> SparseInterleavedPolynomial<F> {
+    pub fn layer_output(&self) -> SparseInterleavedPolynomial<F> {
         let values: Vec<_> = self
             .fingerprints
             .par_iter()
