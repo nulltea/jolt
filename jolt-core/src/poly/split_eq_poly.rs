@@ -255,6 +255,13 @@ impl<F: JoltField> SplitEqPolynomial<F> {
         }
     }
 
+    pub fn new_bind(w: &[F], r: &[F]) -> Self {
+        let mut eq = Self::new(w);
+        r.iter().for_each(|&r| eq.bind(r)); // todo uptimize
+        eq.num_vars -= r.len();
+        eq
+    }
+
     pub fn get_num_vars(&self) -> usize {
         self.num_vars
     }
