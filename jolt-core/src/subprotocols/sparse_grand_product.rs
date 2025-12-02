@@ -29,7 +29,7 @@ use rayon::prelude::*;
 ///   o      o     o      o                          ↑
 ///  / \    / \   / \    / \    –––––––––––––––––––––––––––––––––––––––––––
 /// 🏴  o  🏳️ o  🏳️ o  🏴  o    toggle layer        ↓
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct BatchedGrandProductToggleLayer<F: JoltField> {
     /// The list of non-zero flag indices for each circuit in the batch.
     pub flag_indices: Vec<Vec<usize>>,
@@ -748,6 +748,7 @@ impl<F: JoltField, ProofTranscript: Transcript> BatchedCubicSumcheck<F, ProofTra
                             delta.2 += eq_poly.E2[prev_x2] * inner_sum.2;
                             inner_sum = (F::zero(), F::zero(), F::zero());
                             prev_x2 = x2;
+                            println!("x2 != prev_x2 reset inner sum");
                         }
 
                         let x1 = block_index & x1_bitmask;

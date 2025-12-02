@@ -16,6 +16,8 @@ use crate::poly::split_eq_poly::DistributedSplitEqPolynomial;
 use crate::poly::split_eq_poly::{GruenSplitEqPolynomial, SplitEqPolynomial};
 use crate::poly::unipoly::{CompressedUniPoly, UniPoly};
 use crate::r1cs::builder::{Constraint, OffsetEqConstraint};
+#[cfg(test)]
+use crate::subprotocols::sparse_grand_product::BatchedGrandProductToggleLayer;
 use crate::utils::errors::ProofVerifyError;
 use crate::utils::math::Math;
 use crate::utils::small_value::svo_helpers::process_svo_sumcheck_rounds;
@@ -417,7 +419,7 @@ impl<F: JoltField, ProofTranscript: Transcript> SumcheckInstanceProof<F, ProofTr
     }
 
     #[cfg(test)]
-    pub fn simulate_prove_cubic_distributed_batch_wize(
+    pub fn simulate_sumcheck_distributed_batch_wize(
         claim: &F,
         num_rounds: usize,
         eq_polys: &mut [DistributedSplitEqPolynomial<F>],
@@ -438,37 +440,7 @@ impl<F: JoltField, ProofTranscript: Transcript> SumcheckInstanceProof<F, ProofTr
             num_rounds, worker_rounds, remaining_rounds
         );
 
-        println!(
-            "poly: {} eq_poly: [{}]",
-            workers_polys[0].len(),
-            eq_polys
-                .iter()
-                .map(|eq| format!("E1_len={} E2_len={}", eq.E1_len, eq.E2_len))
-                .collect::<Vec<String>>()
-                .join(", ")
-        );
-
         for _round in 0..worker_rounds {
-            // Vector storing evaluations of combined polynomials g(x) = P_0(x) * ... P_{num_polys} (x)
-            // for points {0, ..., |g(x)|}
-            // println!("worker round {} poly: {}", _round, workers_polys[0].len());
-
-            // let mle_half = workers_polys[0].len() / 2;
-
-            println!(
-                "round {} polys {:?} eq_poly: [{}]",
-                _round,
-                workers_polys
-                    .iter()
-                    .map(|p| p.coeffs[..p.len()].len())
-                    .collect_vec(),
-                eq_polys
-                    .iter()
-                    .map(|eq| format!("E1_len={} E2_len={}", eq.E1_len, eq.E2_len))
-                    .collect::<Vec<String>>()
-                    .join(", ")
-            );
-
             let mut eval_points = workers_polys
                 .iter()
                 .enumerate()
@@ -522,26 +494,11 @@ impl<F: JoltField, ProofTranscript: Transcript> SumcheckInstanceProof<F, ProofTr
             .map(|poly| poly.coeffs[..poly.len()].to_vec())
             .collect();
 
-        // let eq_poly_remaining_evals: Vec<Vec<F>> = eq_polys
-        //     .iter()
-        //     .map(|poly| {
-        //         println!("E1_len {} E2_len {}", poly.E1_len, poly.E2_len);
-        //         poly.E2[..poly.E2_len].to_vec()
-        //     })
-        //     .collect();
-
         let mut poly = DenseInterleavedPolynomial::new(
             (0..num_workers)
                 .flat_map(|w| poly_remaining_evals[w].clone())
                 .collect_vec(),
         );
-        // let mut eq_poly = SplitEqPolynomial::new_bound(
-        //     vec![F::ZERO],
-        //     (0..num_workers)
-        //         .flat_map(|w| eq_poly_remaining_evals[w].clone())
-        //         .collect_vec(),
-        //     remaining_rounds,
-        // );
 
         let mut eq_poly = {
             let mut eq_poly = SplitEqPolynomial::new(r_grand_product);
@@ -551,21 +508,13 @@ impl<F: JoltField, ProofTranscript: Transcript> SumcheckInstanceProof<F, ProofTr
 
         println!(
             "remaining eq_poly E1_len: {:?} E2_len: {:?}",
-            eq_poly.E1_len,
-            eq_poly.E2_len,
-            // &eq_poly.E2[..eq_poly.E2_len]
+            eq_poly.E1_len, eq_poly.E2_len,
         );
 
         // TODO: send suffix evals to pad to nearest modulo 4
         println!("remaining poly {:?}", poly.coeffs.len());
 
         for _round in 0..remaining_rounds {
-            // println!(
-            //     "rem round {} | poly: {}",
-            //     _round,
-            //     poly.len(), // &polys[1].coeffs_as_field_elements()[..polys[1].len()]
-            // );
-
             let univariate_poly = BatchedCubicSumcheck::<F, ProofTranscript>::compute_cubic(
                 &poly,
                 &eq_poly,
@@ -592,7 +541,7 @@ impl<F: JoltField, ProofTranscript: Transcript> SumcheckInstanceProof<F, ProofTr
     }
 
     #[cfg(test)]
-    pub fn simulate_prove_cubic_distributed_sparse_batch_wize(
+    pub fn simulate_sumcheck_distributed_sparse_batch_wize(
         claim: &F,
         num_rounds: usize,
         eq_polys: &mut [DistributedSplitEqPolynomial<F>],
@@ -613,34 +562,7 @@ impl<F: JoltField, ProofTranscript: Transcript> SumcheckInstanceProof<F, ProofTr
             num_rounds, worker_rounds, remaining_rounds
         );
 
-        println!(
-            "poly: {} eq_poly: [{}]",
-            workers_polys[0].dense_len,
-            eq_polys
-                .iter()
-                .map(|eq| format!("E1_len={} E2_len={}", eq.E1_len, eq.E2_len))
-                .collect::<Vec<String>>()
-                .join(", ")
-        );
-
         for _round in 0..worker_rounds {
-            // Vector storing evaluations of combined polynomials g(x) = P_0(x) * ... P_{num_polys} (x)
-            // for points {0, ..., |g(x)|}
-            // println!("worker round {} poly: {}", _round, workers_polys[0].len());
-
-            // let mle_half = workers_polys[0].len() / 2;
-
-            println!(
-                "round {} polys {:?} eq_poly: [{}]",
-                _round,
-                workers_polys.iter().map(|p| p.dense_len).collect_vec(),
-                eq_polys
-                    .iter()
-                    .map(|eq| format!("E1_len={} E2_len={}", eq.E1_len, eq.E2_len))
-                    .collect::<Vec<String>>()
-                    .join(", ")
-            );
-
             let mut eval_points = workers_polys
                 .iter()
                 .enumerate()
@@ -649,10 +571,6 @@ impl<F: JoltField, ProofTranscript: Transcript> SumcheckInstanceProof<F, ProofTr
                     println!(
                         "worker {worker} eq_poly E1_len: {} E2_len: {}",
                         &eq_polys[worker].E1_len, &eq_polys[worker].E2_len
-                    );
-                    println!(
-                        "worker {worker} poly is coallesed {:?}",
-                        &poly.coalesced.is_some()
                     );
                     let evals = sparse_interleaved_sumcheck_evals(poly, &eq_polys[worker]);
                     println!("----------------");
@@ -700,26 +618,11 @@ impl<F: JoltField, ProofTranscript: Transcript> SumcheckInstanceProof<F, ProofTr
             .map(|poly| poly.coeffs[..poly.len()].to_vec())
             .collect();
 
-        // let eq_poly_remaining_evals: Vec<Vec<F>> = eq_polys
-        //     .iter()
-        //     .map(|poly| {
-        //         println!("E1_len {} E2_len {}", poly.E1_len, poly.E2_len);
-        //         poly.E2[..poly.E2_len].to_vec()
-        //     })
-        //     .collect();
-
         let mut poly = DenseInterleavedPolynomial::new(
             (0..num_workers)
                 .flat_map(|w| poly_remaining_evals[w].clone())
                 .collect_vec(),
         );
-        // let mut eq_poly = SplitEqPolynomial::new_bound(
-        //     vec![F::ZERO],
-        //     (0..num_workers)
-        //         .flat_map(|w| eq_poly_remaining_evals[w].clone())
-        //         .collect_vec(),
-        //     remaining_rounds,
-        // );
 
         let mut eq_poly = {
             let mut eq_poly = SplitEqPolynomial::new(r_grand_product);
@@ -729,21 +632,13 @@ impl<F: JoltField, ProofTranscript: Transcript> SumcheckInstanceProof<F, ProofTr
 
         println!(
             "remaining eq_poly E1_len: {:?} E2_len: {:?}",
-            eq_poly.E1_len,
-            eq_poly.E2_len,
-            // &eq_poly.E2[..eq_poly.E2_len]
+            eq_poly.E1_len, eq_poly.E2_len,
         );
 
         // TODO: send suffix evals to pad to nearest modulo 4
         println!("remaining poly {:?}", poly.coeffs.len());
 
         for _round in 0..remaining_rounds {
-            // println!(
-            //     "rem round {} | poly: {}",
-            //     _round,
-            //     poly.len(), // &polys[1].coeffs_as_field_elements()[..polys[1].len()]
-            // );
-
             let univariate_poly = BatchedCubicSumcheck::<F, ProofTranscript>::compute_cubic(
                 &poly,
                 &eq_poly,
@@ -753,6 +648,155 @@ impl<F: JoltField, ProofTranscript: Transcript> SumcheckInstanceProof<F, ProofTr
             // append the prover's message to the transcript
             compressed_poly.append_to_transcript(transcript);
             let r_j = transcript.challenge_scalar();
+            r.push(r_j);
+
+            // bound all tables to the verifier's challenge
+            poly.bind(r_j);
+            eq_poly.bind(r_j);
+            previous_claim = univariate_poly.evaluate(&r_j);
+            compressed_polys.push(compressed_poly);
+        }
+
+        (
+            SumcheckInstanceProof::new(compressed_polys),
+            r,
+            BatchedCubicSumcheck::<F, ProofTranscript>::final_claims(&poly),
+        )
+    }
+
+    #[cfg(test)]
+    pub fn simulate_sumcheck_distributed_toggle_batch_wize(
+        claim: &F,
+        num_rounds: usize,
+        eq_polys: &mut [DistributedSplitEqPolynomial<F>],
+        r_grand_product: &[F],
+        workers_polys: &mut [BatchedGrandProductToggleLayer<F>],
+        transcript: &mut ProofTranscript,
+    ) -> (Self, Vec<F>, (F, F)) {
+        let mut previous_claim = *claim;
+        let mut r: Vec<F> = Vec::new();
+        let mut compressed_polys: Vec<CompressedUniPoly<F>> = Vec::new();
+
+        let worker_rounds = eq_polys[0].get_num_vars() - 2;
+
+        let remaining_rounds = num_rounds - worker_rounds;
+        println!(
+            "num_rounds: {} worker_rounds {} remaining_rounds {}",
+            num_rounds, worker_rounds, remaining_rounds
+        );
+
+        for _round in 0..worker_rounds {
+            let mut eval_points = workers_polys
+                .iter()
+                .enumerate()
+                .map(|(worker, poly)| {
+                    println!("worker {worker} poly: {:?}", &poly.batched_layer_len);
+                    println!(
+                        "worker {worker} eq_poly E1_len: {} E2_len: {}",
+                        &eq_polys[worker].E1_len, &eq_polys[worker].E2_len
+                    );
+                    let evals = toggle_layer_sumcheck_evals(poly, &eq_polys[worker]);
+                    println!("----------------");
+                    evals
+                })
+                .reduce(|mut eval_points, eval_points_next| {
+                    izip!(eval_points.iter_mut(), eval_points_next).for_each(|(a, b)| *a += b);
+                    eval_points
+                })
+                .unwrap();
+
+            // println!("-------");
+            // println!("eval points: {:?}", eval_points);
+            // println!("--------------");
+
+            eval_points.insert(1, previous_claim - eval_points[0]);
+            let univariate_poly = UniPoly::from_evals(&eval_points);
+            let compressed_poly = univariate_poly.compress();
+            // append the prover's message to the transcript
+            compressed_poly.append_to_transcript(transcript);
+            let r_j = transcript.challenge_scalar();
+            println!("r_j: {:?}", r_j);
+            r.push(r_j);
+
+            // bound all tables to the verifier's challenge
+            workers_polys.par_iter_mut().for_each(|poly| poly.bind(r_j));
+            eq_polys.par_iter_mut().for_each(|poly| poly.bind(r_j));
+            previous_claim = univariate_poly.evaluate(&r_j);
+            compressed_polys.push(compressed_poly);
+        }
+
+        println!(
+            "poly: {} eq_poly: [{}]",
+            workers_polys[0].batched_layer_len,
+            eq_polys
+                .iter()
+                .map(|eq| format!("E1_len={} E2_len={} len {}", eq.E1_len, eq.E2_len, eq.len()))
+                .collect::<Vec<String>>()
+                .join(", ")
+        );
+
+        let remaining_fingerprints: Vec<_> = izip!(workers_polys.iter(), eq_polys.iter())
+            .flat_map(|(p, eq)| {
+                p.coalesced_fingerprints
+                    .as_ref()
+                    .unwrap()
+                    .iter()
+                    .take(eq.len())
+                    .copied()
+                    .pad_using(eq.len(), |_| F::zero())
+            })
+            .collect();
+
+        let remaining_flags: Vec<_> = izip!(workers_polys.iter(), eq_polys.iter())
+            .flat_map(|(p, eq)| {
+                p.coalesced_flags
+                    .as_ref()
+                    .unwrap()
+                    .iter()
+                    .take(eq.len())
+                    .copied()
+                    .pad_using(eq.len(), |_| F::one())
+            })
+            .collect();
+
+        // println!(
+        //     "flags: {:?} remaining fingerprints: {:?} ",
+        //     remaining_flags, remaining_fingerprints
+        // );
+
+        let mut poly = BatchedGrandProductToggleLayer {
+            flag_indices: vec![],
+            flag_values: vec![],
+            fingerprints: vec![],
+            coalesced_fingerprints: Some(remaining_fingerprints),
+            coalesced_flags: Some(remaining_flags),
+            layer_len: 2,
+            batched_layer_len: 0,
+        };
+
+        let mut eq_poly = {
+            let mut eq_poly = SplitEqPolynomial::new(r_grand_product);
+            r.iter().for_each(|r| eq_poly.bind(*r));
+            eq_poly
+        };
+
+        // println!(
+        //     "remaining eq_poly E1_len: {:?} E2_len: {:?}",
+        //     eq_poly.E1_len, eq_poly.E2_len,
+        // );
+
+        for _round in 0..remaining_rounds {
+            let univariate_poly = BatchedCubicSumcheck::<F, ProofTranscript>::compute_cubic(
+                &poly,
+                &eq_poly,
+                previous_claim,
+            );
+            let compressed_poly = univariate_poly.compress();
+            // append the prover's message to the transcript
+            compressed_poly.append_to_transcript(transcript);
+            let r_j = transcript.challenge_scalar();
+            println!("r_j: {:?}", r_j);
+
             r.push(r_j);
 
             // bound all tables to the verifier's challenge
@@ -1302,6 +1346,493 @@ fn sparse_interleaved_sumcheck_evals<F: JoltField>(
     cubic_evals.to_vec()
 }
 
+#[cfg(test)]
+fn toggle_layer_sumcheck_evals<F: JoltField>(
+    poly: &BatchedGrandProductToggleLayer<F>,
+    eq_poly: &DistributedSplitEqPolynomial<F>,
+) -> Vec<F> {
+    use crate::field::OptimizedMul;
+    let E1_len = eq_poly.E1_len;
+
+    if let Some(coalesced_flags) = &poly.coalesced_flags {
+        let coalesced_fingerprints = poly.coalesced_fingerprints.as_ref().unwrap();
+
+        let cubic_evals = if E1_len == 1 {
+            // 1. Flags/fingerprints are coalesced, and E1 is fully bound
+            // This is similar to the if case of `DenseInterleavedPolynomial::compute_cubic`
+            coalesced_flags
+                .par_chunks(2)
+                .zip(coalesced_fingerprints.par_chunks(2))
+                .zip(eq_poly.E2.par_chunks(2))
+                .map(|((flags, fingerprints), eq_chunk)| {
+                    let eq_evals = {
+                        let eval_point_0 = eq_chunk[0];
+                        let m_eq = eq_chunk[1] - eq_chunk[0];
+                        let eval_point_2 = eq_chunk[1] + m_eq;
+                        let eval_point_3 = eval_point_2 + m_eq;
+                        (eval_point_0, eval_point_2, eval_point_3)
+                    };
+                    let m_flag = flags[1] - flags[0];
+                    let m_fingerprint = fingerprints[1] - fingerprints[0];
+
+                    let flag_eval_2 = flags[1] + m_flag;
+                    let flag_eval_3 = flag_eval_2 + m_flag;
+
+                    let fingerprint_eval_2 = fingerprints[1] + m_fingerprint;
+                    let fingerprint_eval_3 = fingerprint_eval_2 + m_fingerprint;
+
+                    // println!(
+                    //     "E2 partial evals: {:?}",
+                    //     [
+                    //         [eq_evals.0, eq_evals.1, eq_evals.2],
+                    //         [flags[0], flag_eval_2, flag_eval_3],
+                    //         [fingerprints[0], fingerprint_eval_2, fingerprint_eval_3]
+                    //     ]
+                    // );
+
+                    (
+                        eq_evals.0 * (flags[0] * fingerprints[0] + F::one() - flags[0]),
+                        eq_evals.1 * (flag_eval_2 * fingerprint_eval_2 + F::one() - flag_eval_2),
+                        eq_evals.2 * (flag_eval_3 * fingerprint_eval_3 + F::one() - flag_eval_3),
+                    )
+                })
+                .reduce(
+                    || (F::zero(), F::zero(), F::zero()),
+                    |sum, evals| (sum.0 + evals.0, sum.1 + evals.1, sum.2 + evals.2),
+                )
+        } else {
+            // 2. Flags/fingerprints are coalesced, and E1 isn't fully bound
+            // This is similar to the else case of `DenseInterleavedPolynomial::compute_cubic`
+            let E1_evals: Vec<_> = eq_poly.E1[..E1_len]
+                .par_chunks(2)
+                .map(|E1_chunk| {
+                    let eval_point_0 = E1_chunk[0];
+                    let m_eq = E1_chunk[1] - E1_chunk[0];
+                    let eval_point_2 = E1_chunk[1] + m_eq;
+                    let eval_point_3 = eval_point_2 + m_eq;
+                    (eval_point_0, eval_point_2, eval_point_3)
+                })
+                .collect();
+
+            let eq_slice_end =
+                eq_poly.global_start + core::cmp::min(eq_poly.len, poly.batched_layer_len / 2);
+            let E2_local_bound = eq_slice_end
+                .div_ceil(E1_len) // first row index strictly after slice_end
+                .saturating_sub(eq_poly.row_start)
+                .min(eq_poly.E2_len);
+
+            eq_poly.E2[..E2_local_bound]
+                .par_iter()
+                .enumerate()
+                .map(|(E2_i, E2_eval)| {
+                    let row_global = eq_poly.row_start + E2_i;
+                    let row_first = row_global * E1_len;
+                    let row_last = row_first + E1_len;
+                    let eq_first = eq_poly.global_start.max(row_first);
+                    let eq_last = (eq_poly.global_start + eq_poly.len).min(row_last);
+                    debug_assert!(eq_last > eq_first);
+                    let col_from = eq_first - row_first;
+                    let col_to = eq_last - row_first;
+                    debug_assert!(
+                        col_from % 2 == 0 && col_to % 2 == 0,
+                        "misaligned Eq slice within row"
+                    );
+
+                    let E1_from = col_from / 2;
+                    let E1_to = col_to / 2;
+                    let poly_from = eq_first - eq_poly.global_start;
+                    assert!(
+                        poly_from < poly.batched_layer_len,
+                        "coeff_start out of bounds"
+                    );
+
+                    let mut inner_sum = (F::zero(), F::zero(), F::zero());
+                    for ((E1_evals, flag_chunk), fingerprint_chunk) in E1_evals[E1_from..E1_to]
+                        .iter()
+                        .zip(coalesced_flags[poly_from..].chunks(2))
+                        .zip(coalesced_fingerprints[poly_from..].chunks(2))
+                    {
+                        let m_flag = flag_chunk[1] - flag_chunk[0];
+                        let m_fingerprint = fingerprint_chunk[1] - fingerprint_chunk[0];
+
+                        let flag_eval_2 = flag_chunk[1] + m_flag;
+                        let flag_eval_3 = flag_eval_2 + m_flag;
+
+                        let fingerprint_eval_2 = fingerprint_chunk[1] + m_fingerprint;
+                        let fingerprint_eval_3 = fingerprint_eval_2 + m_fingerprint;
+
+                        // println!(
+                        //     "E1 partial evals: {:?}",
+                        //     [
+                        //         [
+                        //             E1_evals.0 * E2_eval,
+                        //             E1_evals.1 * E2_eval,
+                        //             E1_evals.2 * E2_eval
+                        //         ],
+                        //         [flag_chunk[0], flag_eval_2, flag_eval_3],
+                        //         [fingerprint_chunk[0], fingerprint_eval_2, fingerprint_eval_3]
+                        //     ]
+                        // );
+                        // println!("------");
+
+                        inner_sum.0 += E1_evals.0
+                            * (flag_chunk[0] * fingerprint_chunk[0] + F::one() - flag_chunk[0]);
+                        inner_sum.1 += E1_evals.1
+                            * (flag_eval_2 * fingerprint_eval_2 + F::one() - flag_eval_2);
+                        inner_sum.2 += E1_evals.2
+                            * (flag_eval_3 * fingerprint_eval_3 + F::one() - flag_eval_3);
+                    }
+
+                    // println!("-------------");
+
+                    (
+                        *E2_eval * inner_sum.0,
+                        *E2_eval * inner_sum.1,
+                        *E2_eval * inner_sum.2,
+                    )
+                })
+                .reduce(
+                    || (F::zero(), F::zero(), F::zero()),
+                    |sum, evals| (sum.0 + evals.0, sum.1 + evals.1, sum.2 + evals.2),
+                )
+        };
+
+        return vec![cubic_evals.0, cubic_evals.1, cubic_evals.2];
+    }
+
+    let cubic_evals = if E1_len == 1 {
+        // 3. Flags/fingerprints aren't coalesced, and E1 is fully bound
+        // This is similar to the if case of `SparseInterleavedPolynomial::compute_cubic`
+        let eq_evals: Vec<(F, F, F)> = eq_poly.E2[..eq_poly.E2_len]
+            .par_chunks(2)
+            .take(poly.batched_layer_len / 4)
+            .map(|eq_chunk| {
+                let eval_point_0 = eq_chunk[0];
+                let m_eq = eq_chunk[1] - eq_chunk[0];
+                let eval_point_2 = eq_chunk[1] + m_eq;
+                let eval_point_3 = eval_point_2 + m_eq;
+                (eval_point_0, eval_point_2, eval_point_3)
+            })
+            .collect();
+        let eq_eval_sums: (F, F, F) = eq_evals
+            .par_iter()
+            .fold(
+                || (F::zero(), F::zero(), F::zero()),
+                |sum, evals| (sum.0 + evals.0, sum.1 + evals.1, sum.2 + evals.2),
+            )
+            .reduce(
+                || (F::zero(), F::zero(), F::zero()),
+                |sum, evals| (sum.0 + evals.0, sum.1 + evals.1, sum.2 + evals.2),
+            );
+
+        let deltas: (F, F, F) = (0..poly.fingerprints.len())
+            .into_par_iter()
+            .map(|batch_index| {
+                // Computes:
+                //     ∆ := Σ eq_evals[j] * (flag[j] * fingerprint[j] - flag[j])    ∀j where flag[j] ≠ 0
+                // for the evaluation points {0, 2, 3}
+
+                let fingerprints = &poly.fingerprints[batch_index];
+                let flag_indices = &poly.flag_indices[batch_index / 2];
+
+                let unbound = poly.flag_values.is_empty();
+                let mut delta = (F::zero(), F::zero(), F::zero());
+
+                let mut next_index_to_process = 0usize;
+                for (j, index) in flag_indices.iter().enumerate() {
+                    if *index < next_index_to_process {
+                        // This node was already processed in a previous iteration
+                        continue;
+                    }
+
+                    let (flags, fingerprints) = if index % 2 == 0 {
+                        let neighbor = flag_indices.get(j + 1).cloned().unwrap_or(0);
+                        let flags = if neighbor == index + 1 {
+                            // Neighbor is flag's sibling
+                            if unbound {
+                                (F::one(), F::one())
+                            } else {
+                                (
+                                    poly.flag_values[batch_index / 2][j],
+                                    poly.flag_values[batch_index / 2][j + 1],
+                                )
+                            }
+                        } else {
+                            // This flag's sibling wasn't found, so it must have value 0.
+                            if unbound {
+                                (F::one(), F::zero())
+                            } else {
+                                (poly.flag_values[batch_index / 2][j], F::zero())
+                            }
+                        };
+                        let fingerprints = (fingerprints[*index], fingerprints[index + 1]);
+
+                        next_index_to_process = index + 2;
+                        (flags, fingerprints)
+                    } else {
+                        // This flag's sibling wasn't encountered in a previous iteration,
+                        // so it must have had value 0.
+                        let flags = if unbound {
+                            (F::zero(), F::one())
+                        } else {
+                            (F::zero(), poly.flag_values[batch_index / 2][j])
+                        };
+                        let fingerprints = (fingerprints[index - 1], fingerprints[*index]);
+
+                        next_index_to_process = index + 1;
+                        (flags, fingerprints)
+                    };
+
+                    let m_flag = flags.1 - flags.0;
+                    let m_fingerprint = fingerprints.1 - fingerprints.0;
+
+                    // If flags are still unbound, flag evals will mostly be 0s and 1s
+                    // Bound flags are still mostly 0s, so flag evals will mostly be 0s.
+                    let flag_eval_2 = flags.1 + m_flag;
+                    let flag_eval_3 = flag_eval_2 + m_flag;
+
+                    let fingerprint_eval_2 = fingerprints.1 + m_fingerprint;
+                    let fingerprint_eval_3 = fingerprint_eval_2 + m_fingerprint;
+
+                    let block_index = (poly.layer_len * batch_index) / 4 + index / 2;
+                    let eq_evals = eq_evals[block_index];
+
+                    delta.0 += eq_evals
+                        .0
+                        .mul_0_optimized(flags.0.mul_01_optimized(fingerprints.0) - flags.0);
+                    delta.1 += eq_evals.1.mul_0_optimized(
+                        flag_eval_2.mul_01_optimized(fingerprint_eval_2) - flag_eval_2,
+                    );
+                    delta.2 += eq_evals.2.mul_0_optimized(
+                        flag_eval_3.mul_01_optimized(fingerprint_eval_3) - flag_eval_3,
+                    );
+                }
+
+                (delta.0, delta.1, delta.2)
+            })
+            .reduce(
+                || (F::zero(), F::zero(), F::zero()),
+                |sum, evals| (sum.0 + evals.0, sum.1 + evals.1, sum.2 + evals.2),
+            );
+        // eq_eval_sum + ∆ = Σ eq_evals[i] + Σ eq_evals[i] * (flag[i] * fingerprint[i] - flag[i]))
+        //                 = Σ eq_evals[j] * (flag[i] * fingerprint[i] + 1 - flag[i])
+        (
+            eq_eval_sums.0 + deltas.0,
+            eq_eval_sums.1 + deltas.1,
+            eq_eval_sums.2 + deltas.2,
+        )
+    } else {
+        // 4. Flags/fingerprints aren't coalesced, and E1 isn't fully bound
+        // This is similar to the else case of `SparseInterleavedPolynomial::compute_cubic`
+        let E1_evals: Vec<_> = eq_poly.E1[..eq_poly.E1_len]
+            .par_chunks(2)
+            .map(|E1_chunk| {
+                let eval_point_0 = E1_chunk[0];
+                let m_eq = E1_chunk[1] - E1_chunk[0];
+                let eval_point_2 = E1_chunk[1] + m_eq;
+                let eval_point_3 = eval_point_2 + m_eq;
+                (eval_point_0, eval_point_2, eval_point_3)
+            })
+            .collect();
+
+        // Prefix sums over E1_evals along the "C" (pair) axis.
+        // prefix[j][i] = sum_{k < i} E1_evals[k][j]
+        let mut prefix_sums = vec![[F::zero(); 3]; E1_len + 1];
+
+        for (i, e) in E1_evals.iter().enumerate() {
+            prefix_sums[i + 1][0] = prefix_sums[i][0] + e.0;
+            prefix_sums[i + 1][1] = prefix_sums[i][1] + e.1;
+            prefix_sums[i + 1][2] = prefix_sums[i][2] + e.2;
+        }
+
+        let eq_slice_start = eq_poly.global_start;
+        let eq_slice_end = eq_slice_start + core::cmp::min(eq_poly.len, poly.batched_layer_len / 2);
+
+        let E2_local_bound = eq_slice_end
+            .div_ceil(E1_len)
+            .saturating_sub(eq_poly.row_start)
+            .min(eq_poly.E2_len);
+
+        // todo remove this:
+        let num_x1_bits = eq_poly.E1_len.log_2() - 1;
+        let x1_bitmask = (1 << num_x1_bits) - 1;
+
+        // change here
+        let deltas = (0..poly.fingerprints.len())
+            .into_par_iter()
+            .map(|batch_index| {
+                // Computes:
+                //     ∆ := Σ eq_evals[j] * (flag[j] * fingerprint[j] - flag[j])    ∀j where flag[j] ≠ 0
+                // for the evaluation points {0, 2, 3}
+
+                let fingerprints = &poly.fingerprints[batch_index];
+                let flag_indices = &poly.flag_indices[batch_index / 2];
+
+                let unbound = poly.flag_values.is_empty();
+                let mut delta = (F::zero(), F::zero(), F::zero());
+                let mut inner_sum = (F::zero(), F::zero(), F::zero());
+                let mut prev_x2 = 0;
+
+                let mut next_index_to_process = 0usize;
+                for (j, index) in flag_indices.iter().enumerate() {
+                    if *index < next_index_to_process {
+                        // This node was already processed in a previous iteration
+                        continue;
+                    }
+
+                    let (flags, fingerprints) = if index % 2 == 0 {
+                        let neighbor = flag_indices.get(j + 1).cloned().unwrap_or(0);
+                        let flags = if neighbor == index + 1 {
+                            // Neighbor is flag's sibling
+                            if unbound {
+                                (F::one(), F::one())
+                            } else {
+                                (
+                                    poly.flag_values[batch_index / 2][j],
+                                    poly.flag_values[batch_index / 2][j + 1],
+                                )
+                            }
+                        } else {
+                            // This flag's sibling wasn't found, so it must have value 0.
+                            if unbound {
+                                (F::one(), F::zero())
+                            } else {
+                                (poly.flag_values[batch_index / 2][j], F::zero())
+                            }
+                        };
+                        let fingerprints = (fingerprints[*index], fingerprints[index + 1]);
+
+                        next_index_to_process = index + 2;
+                        (flags, fingerprints)
+                    } else {
+                        // This flag's sibling wasn't encountered in a previous iteration,
+                        // so it must have had value 0.
+                        let flags = if unbound {
+                            (F::zero(), F::one())
+                        } else {
+                            (F::zero(), poly.flag_values[batch_index / 2][j])
+                        };
+                        let fingerprints = (fingerprints[index - 1], fingerprints[*index]);
+
+                        next_index_to_process = index + 1;
+                        (flags, fingerprints)
+                    };
+
+                    let m_flag = flags.1 - flags.0;
+                    let m_fingerprint = fingerprints.1 - fingerprints.0;
+
+                    // If flags are still unbound, flag evals will mostly be 0s and 1s
+                    // Bound flags are still mostly 0s, so flag evals will mostly be 0s.
+                    let flag_eval_2 = flags.1 + m_flag;
+                    let flag_eval_3 = flag_eval_2 + m_flag;
+
+                    let fingerprint_eval_2 = fingerprints.1 + m_fingerprint;
+                    let fingerprint_eval_3 = fingerprint_eval_2 + m_fingerprint;
+
+                    let block_index = (poly.layer_len * batch_index) / 4 + index / 2;
+                    let x2 = block_index >> num_x1_bits;
+                    if x2 != prev_x2 {
+                        delta.0 += eq_poly.E2[prev_x2] * inner_sum.0;
+                        delta.1 += eq_poly.E2[prev_x2] * inner_sum.1;
+                        delta.2 += eq_poly.E2[prev_x2] * inner_sum.2;
+                        inner_sum = (F::zero(), F::zero(), F::zero());
+                        prev_x2 = x2;
+                    }
+                    let x1 = block_index & x1_bitmask;
+
+                    // println!(
+                    //     "E1 deltas: {:?}",
+                    //     [
+                    //         [
+                    //             E1_evals[x1].0 * eq_poly.E2[prev_x2],
+                    //             E1_evals[x1].1 * eq_poly.E2[prev_x2],
+                    //             E1_evals[x1].2 * eq_poly.E2[prev_x2]
+                    //         ],
+                    //         [flags.0, flag_eval_2, flag_eval_3],
+                    //         [fingerprints.0, fingerprint_eval_2, fingerprint_eval_3]
+                    //     ]
+                    // );
+                    // println!("-------");
+
+                    inner_sum.0 += E1_evals[x1]
+                        .0
+                        .mul_0_optimized(flags.0.mul_01_optimized(fingerprints.0) - flags.0);
+                    inner_sum.1 += E1_evals[x1].1.mul_0_optimized(
+                        flag_eval_2.mul_01_optimized(fingerprint_eval_2) - flag_eval_2,
+                    );
+                    inner_sum.2 += E1_evals[x1].2.mul_0_optimized(
+                        flag_eval_3.mul_01_optimized(fingerprint_eval_3) - flag_eval_3,
+                    );
+                }
+
+                delta.0 += eq_poly.E2[prev_x2] * inner_sum.0;
+                delta.1 += eq_poly.E2[prev_x2] * inner_sum.1;
+                delta.2 += eq_poly.E2[prev_x2] * inner_sum.2;
+
+                delta
+            })
+            .reduce(
+                || (F::zero(), F::zero(), F::zero()),
+                |sum, evals| (sum.0 + evals.0, sum.1 + evals.1, sum.2 + evals.2),
+            );
+
+        // Optimized baseline assuming all P == 1 on the active part of this worker's slice.
+        let evals_assuming_all_ones: [F; 3] = eq_poly.E2[..E2_local_bound]
+            .par_iter()
+            .enumerate()
+            .map(|(E2_i, E2_eval)| {
+                let row_global = eq_poly.row_start + E2_i;
+                let row_first = row_global * E1_len;
+                let row_last = row_first + E1_len;
+
+                // Intersection with this worker’s slice [slice_start, slice_end).
+                let eq_first = eq_slice_start.max(row_first);
+                let eq_last = eq_slice_end.min(row_last);
+                assert!(eq_first < eq_last);
+
+                // Column offsets inside the row (in Eq points).
+                let col_from = eq_first - row_first;
+                let col_to = eq_last - row_first;
+
+                // Each Dao–Thaler E1 entry spans 2 Eq points; enforce alignment.
+                debug_assert!(
+                    col_from % 2 == 0 && col_to % 2 == 0,
+                    "misaligned Eq slice within row"
+                );
+
+                // Local offset in the dense polynomial (each Eq point → 2 coeffs).
+                let poly_from = (eq_first - eq_poly.global_start) * 2;
+                debug_assert!(poly_from < poly.batched_layer_len);
+                let poly_bound = (poly.batched_layer_len - poly_from) / 4;
+
+                // Range of C-indices (pairs) in this row that belong to this worker.
+                let E1_from = col_from / 2;
+                let E1_to = (col_to / 2).min(poly_bound);
+                debug_assert!(E1_from < E1_to);
+
+                let s0 = prefix_sums[E1_to][0] - prefix_sums[E1_from][0];
+                let s1 = prefix_sums[E1_to][1] - prefix_sums[E1_from][1];
+                let s2 = prefix_sums[E1_to][2] - prefix_sums[E1_from][2];
+
+                [*E2_eval * s0, *E2_eval * s1, *E2_eval * s2]
+            })
+            .reduce(
+                || [F::zero(); 3],
+                |sum, evals| [sum[0] + evals[0], sum[1] + evals[1], sum[2] + evals[2]],
+            );
+
+        (
+            evals_assuming_all_ones[0] + deltas.0,
+            evals_assuming_all_ones[1] + deltas.1,
+            evals_assuming_all_ones[2] + deltas.2,
+        )
+    };
+
+    let cubic_evals = vec![cubic_evals.0, cubic_evals.1, cubic_evals.2];
+
+    cubic_evals
+}
+
 #[test]
 fn test_memories_allocation() {
     type F = ark_bn254::Fr;
@@ -1578,14 +2109,15 @@ fn run_simulation_sparse_dbgp_batch_wize<F: JoltField>(
 
     println!("\n/---------- Construct layers ----------/");
 
+    let mut toggle_layer = izip!(w_fingerprints.iter().cloned(), w_flags.iter().cloned())
+        .map(|(fingerprints, flags)| BatchedGrandProductToggleLayer::new(flags, fingerprints))
+        .collect_vec();
     let input_layer = LayerCircuit {
         layer_idx: num_layers,
-        polys: izip!(w_fingerprints.iter().cloned(), w_flags.iter().cloned())
-            .map(|(fingerprints, flags)| {
-                let toggle = BatchedGrandProductToggleLayer::new(flags, fingerprints);
-                toggle.layer_output()
-            })
-            .collect(),
+        polys: toggle_layer
+            .par_iter()
+            .map(BatchedGrandProductToggleLayer::layer_output)
+            .collect::<Vec<_>>(),
     };
 
     // for w in 0..W {
@@ -1672,7 +2204,7 @@ fn run_simulation_sparse_dbgp_batch_wize<F: JoltField>(
             .collect_vec();
 
         let (proof, r_sumcheck, (left_claim, right_claim)) =
-            SumcheckInstanceProof::<F, KeccakTranscript>::simulate_prove_cubic_distributed_sparse_batch_wize(
+            SumcheckInstanceProof::<F, KeccakTranscript>::simulate_sumcheck_distributed_sparse_batch_wize(
                 &grand_product_claim,
                 num_rounds,
                 &mut eq_polys,
@@ -1698,6 +2230,35 @@ fn run_simulation_sparse_dbgp_batch_wize<F: JoltField>(
         eq_pairs_per_worker *= 2;
         println!("---------------------------");
     }
+
+    println!("\n/------ Toggle prover ------/");
+    let mut eq_polys = (0..W)
+        .map(|w| {
+            DistributedSplitEqPolynomial::new(&r_grand_product, W_log2, w, eq_pairs_per_worker)
+        })
+        .collect_vec();
+
+    let (proof, _, (left_claim, right_claim)) =
+       SumcheckInstanceProof::<F, KeccakTranscript>::simulate_sumcheck_distributed_toggle_batch_wize(
+           &grand_product_claim,
+           num_rounds,
+           &mut eq_polys,
+           &r_grand_product,
+           &mut toggle_layer,
+           &mut transcript,
+       );
+
+    let toggle_layer_proof = LayerProof {
+        proof,
+        left_claim,
+        right_claim,
+    };
+    // r_grand_product = r_sumcheck.iter().rev().copied().collect();
+    grand_product_claim = toggle_layer_proof.left_claim * toggle_layer_proof.right_claim + F::one()
+        - toggle_layer_proof.left_claim;
+
+    println!("toggle layer claim: {:?}", grand_product_claim);
+    println!("---------------------------");
 
     // Verification
     println!("\n/----------- Verification -----------/");
@@ -1738,6 +2299,30 @@ fn run_simulation_sparse_dbgp_batch_wize<F: JoltField>(
         r_grand_product.push(r_layer); // pass updated r_grand_product to next layer
         num_rounds += 1;
     }
+
+    let (sumcheck_claim, r_sumcheck) = toggle_layer_proof
+        .proof
+        .verify(grand_product_claim, num_rounds, 3, &mut transcript)
+        .unwrap();
+
+    let eq_eval: F = r_grand_product
+        .iter()
+        .zip_eq(r_sumcheck.iter().rev())
+        .map(|(&r_gp, &r_sc)| r_gp * r_sc + (F::ONE - r_gp) * (F::ONE - r_sc))
+        .product();
+
+    // cross-layer consistency check
+    let expected_sumcheck_claim: F = eq_eval
+        * (toggle_layer_proof.left_claim * toggle_layer_proof.right_claim + F::one()
+            - toggle_layer_proof.left_claim);
+
+    assert_eq!(expected_sumcheck_claim, sumcheck_claim);
+    println!("toggle layer - verified!");
+
+    // flag * fingerprint + 1 - flag
+    grand_product_claim = toggle_layer_proof.left_claim * toggle_layer_proof.right_claim + F::one()
+        - toggle_layer_proof.left_claim;
+    println!("toggle layer - claim: {}", grand_product_claim);
 }
 
 #[cfg(test)]
@@ -1878,7 +2463,7 @@ fn run_simulation_dbgp_batch_wize<F: JoltField>(
             .collect_vec();
 
         let (proof, r_sumcheck, (left_claim, right_claim)) =
-            SumcheckInstanceProof::<F, KeccakTranscript>::simulate_prove_cubic_distributed_batch_wize(
+            SumcheckInstanceProof::<F, KeccakTranscript>::simulate_sumcheck_distributed_batch_wize(
                 &grand_product_claim,
                 num_rounds,
                 &mut eq_polys,
@@ -2047,12 +2632,11 @@ fn ran_local_sprase_gkr_simulation<F: JoltField>(
 
     println!("\n/----------- Construct layers -----------/");
 
+    let mut toggle_layer = BatchedGrandProductToggleLayer::new(flags, fingerprints);
+
     let input_layer = LayerCircuit {
         layer_idx: num_layers,
-        poly: {
-            let toggle = BatchedGrandProductToggleLayer::new(flags, fingerprints);
-            toggle.layer_output()
-        },
+        poly: toggle_layer.layer_output(),
     };
 
     let mut layers = vec![input_layer];
@@ -2124,7 +2708,23 @@ fn ran_local_sprase_gkr_simulation<F: JoltField>(
         num_rounds += 1;
     }
 
-    // Verification
+    println!("\n/------ Toggle prover ------/");
+    let mut eq_poly = SplitEqPolynomial::new(&r_grand_product);
+
+    let (proof, _r_sumcheck, (left_claim, right_claim)) =
+        toggle_layer.prove_sumcheck(&grand_product_claim, &mut eq_poly, &mut transcript);
+
+    let toggle_layer_proof = LayerProof {
+        proof,
+        left_claim,
+        right_claim,
+    };
+    grand_product_claim = toggle_layer_proof.left_claim * toggle_layer_proof.right_claim + F::one()
+        - toggle_layer_proof.left_claim;
+
+    println!("toggle layer claim: {:?}", grand_product_claim);
+    println!("---------------------------");
+
     println!("\n/----------- Verification -----------/");
 
     let mut transcript = KeccakTranscript::new(&[]);
@@ -2162,6 +2762,30 @@ fn ran_local_sprase_gkr_simulation<F: JoltField>(
         r_grand_product.push(r_layer); // pass r_grand_product2 to next layer
         num_rounds += 1;
     }
+
+    let (sumcheck_claim, r_sumcheck) = toggle_layer_proof
+        .proof
+        .verify(grand_product_claim, num_rounds, 3, &mut transcript)
+        .unwrap();
+
+    let eq_eval: F = r_grand_product
+        .iter()
+        .zip_eq(r_sumcheck.iter().rev())
+        .map(|(&r_gp, &r_sc)| r_gp * r_sc + (F::ONE - r_gp) * (F::ONE - r_sc))
+        .product();
+
+    // cross-layer consistency check
+    let expected_sumcheck_claim: F = eq_eval
+        * (toggle_layer_proof.left_claim * toggle_layer_proof.right_claim + F::one()
+            - toggle_layer_proof.left_claim);
+
+    assert_eq!(expected_sumcheck_claim, sumcheck_claim);
+    println!("toggle layer - verified!");
+
+    // flag * fingerprint + 1 - flag
+    grand_product_claim = toggle_layer_proof.left_claim * toggle_layer_proof.right_claim + F::one()
+        - toggle_layer_proof.left_claim;
+    println!("toggle layer - claim: {}", grand_product_claim);
 }
 
 #[test]
@@ -2656,7 +3280,7 @@ fn test_distributed_sparse_gkr_simulation() {
             [flags.clone(), flags]
         })
         .collect_vec();
-    println!("flags: {:?}", flags.len());
+    println!("flags: {:?}", flags);
     let (w_fingerprints, w_flags) = debug_workers_data(chunk_size, N, W)
         .into_iter()
         .map(|w| {
@@ -2704,9 +3328,7 @@ fn test_local_sparse_gkr_simulation() {
                     }
                 })
                 .collect::<Vec<_>>();
-            if flags.is_empty() {
-                flags.push(1);
-            }
+
             flags.clone()
         })
         .collect_vec();
