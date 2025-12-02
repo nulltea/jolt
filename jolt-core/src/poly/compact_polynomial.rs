@@ -181,6 +181,18 @@ impl<T: SmallScalar, F: JoltField> CompactPolynomial<T, F> {
     pub fn coeffs_ref(&self) -> &[T] {
         &self.coeffs[self.chunk_range.0..self.chunk_range.1]
     }
+
+    pub fn into_distributed_commit_form(&self, len: usize) -> Vec<T> {
+        if len == self.len() {
+            return self.coeffs_ref().to_vec();
+        }
+        let mut coeffs = vec![T::zero(); len];
+        coeffs.splice(
+            self.chunk_range.0..self.chunk_range.1,
+            self.coeffs[self.chunk_range.0..self.chunk_range.1].to_vec(),
+        );
+        coeffs
+    }
 }
 
 impl<T: SmallScalar, F: JoltField> PolynomialBinding<F> for CompactPolynomial<T, F> {

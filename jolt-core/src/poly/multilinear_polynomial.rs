@@ -183,17 +183,21 @@ impl<F: JoltField> MultilinearPolynomial<F> {
     pub fn get_coeff(&self, index: usize) -> F {
         match self {
             MultilinearPolynomial::LargeScalars(poly) => poly[index],
-            MultilinearPolynomial::U8Scalars(poly) => F::from_u8(poly.coeffs[index]),
-            MultilinearPolynomial::U16Scalars(poly) => F::from_u16(poly.coeffs[index]),
-            MultilinearPolynomial::U32Scalars(poly) => F::from_u32(poly.coeffs[index]),
-            MultilinearPolynomial::U64Scalars(poly) => F::from_u64_unchecked(poly.coeffs[index]),
-            MultilinearPolynomial::I64Scalars(poly) => F::from_i64(poly.coeffs[index]),
+            MultilinearPolynomial::U8Scalars(poly) => F::from_u8(poly.coeffs_ref()[index]),
+            MultilinearPolynomial::U16Scalars(poly) => F::from_u16(poly.coeffs_ref()[index]),
+            MultilinearPolynomial::U32Scalars(poly) => F::from_u32(poly.coeffs_ref()[index]),
+            MultilinearPolynomial::U64Scalars(poly) => {
+                F::from_u64_unchecked(poly.coeffs_ref()[index])
+            }
+            MultilinearPolynomial::I64Scalars(poly) => F::from_i64(poly.coeffs_ref()[index]),
         }
     }
 
     pub fn coeffs_as_field_elements(&self) -> Vec<F> {
         match self {
-            MultilinearPolynomial::LargeScalars(dense_polynomial) => dense_polynomial.evals_ref().to_vec(),
+            MultilinearPolynomial::LargeScalars(dense_polynomial) => {
+                dense_polynomial.evals_ref().to_vec()
+            }
             MultilinearPolynomial::U8Scalars(compact_polynomial) => {
                 compact_polynomial.coeffs_as_field_elements()
             }
@@ -252,35 +256,35 @@ impl<F: JoltField> MultilinearPolynomial<F> {
                 if poly.is_bound() {
                     poly.bound_coeffs[index]
                 } else {
-                    F::from_u8(poly.coeffs[index])
+                    F::from_u8(poly.coeffs_ref()[index])
                 }
             }
             MultilinearPolynomial::U16Scalars(poly) => {
                 if poly.is_bound() {
                     poly.bound_coeffs[index]
                 } else {
-                    F::from_u16(poly.coeffs[index])
+                    F::from_u16(poly.coeffs_ref()[index])
                 }
             }
             MultilinearPolynomial::U32Scalars(poly) => {
                 if poly.is_bound() {
                     poly.bound_coeffs[index]
                 } else {
-                    F::from_u32(poly.coeffs[index])
+                    F::from_u32(poly.coeffs_ref()[index])
                 }
             }
             MultilinearPolynomial::U64Scalars(poly) => {
                 if poly.is_bound() {
                     poly.bound_coeffs[index]
                 } else {
-                    F::from_u64_unchecked(poly.coeffs[index])
+                    F::from_u64_unchecked(poly.coeffs_ref()[index])
                 }
             }
             MultilinearPolynomial::I64Scalars(poly) => {
                 if poly.is_bound() {
                     poly.bound_coeffs[index]
                 } else {
-                    F::from_i64(poly.coeffs[index])
+                    F::from_i64(poly.coeffs_ref()[index])
                 }
             }
         }
@@ -350,6 +354,29 @@ impl<F: JoltField> MultilinearPolynomial<F> {
         match self {
             MultilinearPolynomial::LargeScalars(poly) => poly,
             _ => panic!("Expected large-scalar polynomial"),
+        }
+    }
+
+    pub fn into_distributed_commit_form(&self, len: usize) -> Self {
+        match self {
+            MultilinearPolynomial::LargeScalars(poly) => {
+                MultilinearPolynomial::LargeScalars(poly.clone())
+            }
+            MultilinearPolynomial::U8Scalars(poly) => {
+                MultilinearPolynomial::from(poly.into_distributed_commit_form(len))
+            }
+            MultilinearPolynomial::U16Scalars(poly) => {
+                MultilinearPolynomial::from(poly.into_distributed_commit_form(len))
+            }
+            MultilinearPolynomial::U32Scalars(poly) => {
+                MultilinearPolynomial::from(poly.into_distributed_commit_form(len))
+            }
+            MultilinearPolynomial::U64Scalars(poly) => {
+                MultilinearPolynomial::from(poly.into_distributed_commit_form(len))
+            }
+            MultilinearPolynomial::I64Scalars(poly) => {
+                MultilinearPolynomial::from(poly.into_distributed_commit_form(len))
+            }
         }
     }
 }
@@ -579,7 +606,7 @@ impl<F: JoltField> Valid for MultilinearPolynomial<F> {
     }
 }
 
-pub trait PolynomialBinding<F: JoltField, Coeff=F> {
+pub trait PolynomialBinding<F: JoltField, Coeff = F> {
     /// Returns whether or not the polynomial has been bound (in a sumcheck)
     fn is_bound(&self) -> bool;
     /// Binds the polynomial to a random field element `r`.
@@ -591,7 +618,7 @@ pub trait PolynomialBinding<F: JoltField, Coeff=F> {
     fn final_sumcheck_claim(&self) -> Coeff;
 }
 
-pub trait PolynomialEvaluation<F: JoltField, Output=F> {
+pub trait PolynomialEvaluation<F: JoltField, Output = F> {
     /// Returns the final sumcheck claim about the polynomial.
     fn evaluate(&self, r: &[F]) -> Output;
     /// Evaluates a batch of polynomials on the same point `r`.
@@ -628,7 +655,11 @@ impl<F: JoltField> PolynomialBinding<F> for MultilinearPolynomial<F> {
         }
     }
 
-    #[tracing::instrument(skip_all, name = "MultilinearPolynomial::bind_parallel", level = "trace")]
+    #[tracing::instrument(
+        skip_all,
+        name = "MultilinearPolynomial::bind_parallel",
+        level = "trace"
+    )]
     fn bind_parallel(&mut self, r: F, order: BindingOrder) {
         match self {
             MultilinearPolynomial::LargeScalars(poly) => poly.bind_parallel(r, order),

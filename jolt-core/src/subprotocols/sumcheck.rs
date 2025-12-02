@@ -72,9 +72,12 @@ where
         for _round in 0..num_rounds {
             #[cfg(test)]
             self.sumcheck_sanity_check(eq_poly, previous_claim);
-            println!(
-                "!round: {} eq_poly: E1_len {} E2_len {}",
-                _round, eq_poly.E1_len, eq_poly.E2_len
+            tracing::info!(
+                "rem num_rounds {} round: {} eq_poly: E1_len {} E2_len {}",
+                num_rounds,
+                _round,
+                eq_poly.E1_len,
+                eq_poly.E2_len
             );
 
             let cubic_poly = self.compute_cubic(eq_poly, previous_claim);

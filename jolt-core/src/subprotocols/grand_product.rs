@@ -4,14 +4,13 @@ use crate::field::JoltField;
 use crate::poly::commitment::commitment_scheme::CommitmentScheme;
 use crate::poly::dense_interleaved_poly::DenseInterleavedPolynomial;
 use crate::poly::dense_mlpoly::DensePolynomial;
-use crate::poly::eq_poly::EqPolynomial;
 use crate::poly::opening_proof::{ProverOpeningAccumulator, VerifierOpeningAccumulator};
 use crate::poly::split_eq_poly::SplitEqPolynomial;
 use crate::utils::math::Math;
 use crate::utils::thread::drop_in_background_thread;
 use crate::utils::transcript::Transcript;
 use ark_serialize::*;
-use itertools::{interleave, Itertools};
+use itertools::Itertools;
 use rayon::prelude::*;
 
 #[derive(CanonicalSerialize, CanonicalDeserialize)]
@@ -147,18 +146,6 @@ where
 
             transcript.append_scalar(&layer_proof.left_claim);
             transcript.append_scalar(&layer_proof.right_claim);
-
-            if layer_index == 1 {
-                let sigma_r_split = |r: &[F]| {
-                    let n = r.len();
-                    let mut r_sigma = Vec::with_capacity(n);
-                    r_sigma.push(r[n - 1]);
-                    r_sigma.extend_from_slice(&r[..n - 1]);
-                    r_sigma
-                };
-
-                r_grand_product = sigma_r_split(&r_grand_product);
-            }
 
             let eq_eval: F = r_grand_product
                 .iter()
