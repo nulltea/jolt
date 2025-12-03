@@ -29,7 +29,7 @@ use rayon::prelude::*;
 ///   o      o     o      o                          ↑
 ///  / \    / \   / \    / \    –––––––––––––––––––––––––––––––––––––––––––
 /// 🏴  o  🏳️ o  🏳️ o  🏴  o    toggle layer        ↓
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct BatchedGrandProductToggleLayer<F: JoltField> {
     /// The list of non-zero flag indices for each circuit in the batch.
     pub flag_indices: Vec<Vec<usize>>,

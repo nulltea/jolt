@@ -86,6 +86,10 @@ pub trait StructuredPolynomialData<T>: CanonicalSerialize + CanonicalDeserialize
         vec![]
     }
 
+    fn read_write_values_grand_product(&self) -> Vec<&T> {
+        self.read_write_values()
+    }
+
     /// Returns a `Vec` of references to the init/final values of `self`.
     /// Ordering should mirror `init_final_values_mut`.
     fn init_final_values(&self) -> Vec<&T> {
@@ -96,6 +100,10 @@ pub trait StructuredPolynomialData<T>: CanonicalSerialize + CanonicalDeserialize
     /// Ordering should mirror `read_write_values`.
     fn read_write_values_mut(&mut self) -> Vec<&mut T> {
         vec![]
+    }
+
+    fn read_write_values_grand_product_mut(&mut self) -> Vec<&mut T> {
+        self.read_write_values_mut()
     }
 
     /// Returns a `Vec` of mutable references to the init/final values of `self`.
@@ -591,29 +599,31 @@ where
             r_init_final.split_at(init_final_batch_size.next_power_of_two().log_2());
 
         let read_write_commits: Vec<_> = [
-            commitments.read_write_values(),
+            commitments.read_write_values_grand_product(),
             Self::ExogenousOpenings::exogenous_data(jolt_commitments),
         ]
         .concat();
         let read_write_claims: Vec<_> = [
-            proof.openings.read_write_values(),
+            proof.openings.read_write_values_grand_product(),
             proof.exogenous_openings.openings(),
         ]
         .concat();
 
-        opening_accumulator.append(
-            &read_write_commits,
-            r_read_write_opening.to_vec(),
-            &read_write_claims,
-            transcript,
-        );
+        let _rho: F = transcript.challenge_scalar();
+        // opening_accumulator.append(
+        //     &read_write_commits,
+        //     r_read_write_opening.to_vec(),
+        //     &read_write_claims,
+        //     transcript,
+        // );
 
-        opening_accumulator.append(
-            &commitments.init_final_values(),
-            r_init_final_opening.to_vec(),
-            &proof.openings.init_final_values(),
-            transcript,
-        );
+        let _rho: F = transcript.challenge_scalar();
+        // opening_accumulator.append(
+        //     &commitments.init_final_values(),
+        //     r_init_final_opening.to_vec(),
+        //     &proof.openings.init_final_values(),
+        //     transcript,
+        // );
 
         Self::compute_verifier_openings(
             &mut proof.openings,

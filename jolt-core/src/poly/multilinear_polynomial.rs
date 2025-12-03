@@ -45,11 +45,11 @@ impl<F: JoltField> MultilinearPolynomial<F> {
     pub fn original_len(&self) -> usize {
         match self {
             MultilinearPolynomial::LargeScalars(poly) => poly.Z.len(),
-            MultilinearPolynomial::U8Scalars(poly) => poly.coeffs.len(),
-            MultilinearPolynomial::U16Scalars(poly) => poly.coeffs.len(),
-            MultilinearPolynomial::U32Scalars(poly) => poly.coeffs.len(),
-            MultilinearPolynomial::U64Scalars(poly) => poly.coeffs.len(),
-            MultilinearPolynomial::I64Scalars(poly) => poly.coeffs.len(),
+            MultilinearPolynomial::U8Scalars(poly) => poly.coeffs_ref().len(),
+            MultilinearPolynomial::U16Scalars(poly) => poly.coeffs_ref().len(),
+            MultilinearPolynomial::U32Scalars(poly) => poly.coeffs_ref().len(),
+            MultilinearPolynomial::U64Scalars(poly) => poly.coeffs_ref().len(),
+            MultilinearPolynomial::I64Scalars(poly) => poly.coeffs_ref().len(),
         }
     }
 
@@ -296,31 +296,31 @@ impl<F: JoltField> MultilinearPolynomial<F> {
         match self {
             MultilinearPolynomial::LargeScalars(poly) => compute_dotproduct(&poly.Z, other),
             MultilinearPolynomial::U8Scalars(poly) => poly
-                .coeffs
+                .coeffs_ref()
                 .par_iter()
                 .zip_eq(other.par_iter())
                 .map(|(a, b)| a.field_mul(*b))
                 .sum(),
             MultilinearPolynomial::U16Scalars(poly) => poly
-                .coeffs
+                .coeffs_ref()
                 .par_iter()
                 .zip_eq(other.par_iter())
                 .map(|(a, b)| a.field_mul(*b))
                 .sum(),
             MultilinearPolynomial::U32Scalars(poly) => poly
-                .coeffs
+                .coeffs_ref()
                 .par_iter()
                 .zip_eq(other.par_iter())
                 .map(|(a, b)| a.field_mul(*b))
                 .sum(),
             MultilinearPolynomial::U64Scalars(poly) => poly
-                .coeffs
+                .coeffs_ref()
                 .par_iter()
                 .zip_eq(other.par_iter())
                 .map(|(a, b)| a.field_mul(*b))
                 .sum(),
             MultilinearPolynomial::I64Scalars(poly) => poly
-                .coeffs
+                .coeffs_ref()
                 .par_iter()
                 .zip_eq(other.par_iter())
                 .map(|(a, b)| a.field_mul(*b))

@@ -46,7 +46,7 @@ pub struct ProverOpening<F: JoltField> {
     pub opening_point: Vec<F>,
     /// The claimed opening.
     pub claim: F,
-   #[cfg(test)]
+    #[cfg(test)]
     /// If this is a batched opening, this `Vec` contains the individual
     /// polynomials in the batch.
     batch: Vec<MultilinearPolynomial<F>>,
@@ -87,7 +87,7 @@ impl<F: JoltField> ProverOpening<F> {
             eq_poly: MultilinearPolynomial::LargeScalars(eq_poly),
             opening_point,
             claim,
-           #[cfg(test)]
+            #[cfg(test)]
             batch: vec![],
         }
     }
@@ -124,11 +124,11 @@ where
     ProofTranscript: Transcript,
 {
     openings: Vec<VerifierOpening<F, PCS, ProofTranscript>>,
-   #[cfg(test)]
+    #[cfg(test)]
     /// In testing, the Jolt verifier may be provided the prover's openings so that we
     /// can detect any places where the openings don't match up.
     prover_openings: Option<Vec<ProverOpening<F>>>,
-   #[cfg(test)]
+    #[cfg(test)]
     pcs_setup: Option<PCS::Setup>,
 }
 
@@ -179,7 +179,7 @@ impl<F: JoltField, ProofTranscript: Transcript> ProverOpeningAccumulator<F, Proo
         transcript: &mut ProofTranscript,
     ) {
         assert_eq!(polynomials.len(), claims.len());
-       #[cfg(test)]
+        #[cfg(test)]
         {
             for poly in polynomials.iter() {
                 if let MultilinearPolynomial::LargeScalars(dense_polynomial) = poly {
@@ -216,7 +216,7 @@ impl<F: JoltField, ProofTranscript: Transcript> ProverOpeningAccumulator<F, Proo
 
         let batched_poly = MultilinearPolynomial::linear_combination(polynomials, &rho_powers);
 
-       #[cfg(test)]
+        #[cfg(test)]
         {
             let batched_eval = batched_poly.evaluate(&opening_point);
             assert_eq!(batched_eval, batched_claim);
@@ -276,7 +276,7 @@ impl<F: JoltField, ProofTranscript: Transcript> ProverOpeningAccumulator<F, Proo
         // Reduced opening proof
         let joint_opening_proof = PCS::prove(pcs_setup, &joint_poly, &r_sumcheck, transcript);
 
-       #[cfg(test)]
+        #[cfg(test)]
         self.openings
             .iter_mut()
             .zip(unbound_polys.into_iter())
@@ -391,7 +391,8 @@ impl<F: JoltField, ProofTranscript: Transcript> ProverOpeningAccumulator<F, Proo
                     debug_assert!(!opening.polynomial.is_bound());
                     let remaining_variables =
                         remaining_sumcheck_rounds - opening.opening_point.len() - 1;
-                    let scaled_claim = F::from_u64_unchecked(1 << remaining_variables) * opening.claim;
+                    let scaled_claim =
+                        F::from_u64_unchecked(1 << remaining_variables) * opening.claim;
                     (scaled_claim, scaled_claim)
                 }
             })
@@ -429,16 +430,16 @@ where
     pub fn new() -> Self {
         Self {
             openings: vec![],
-           #[cfg(test)]
+            #[cfg(test)]
             prover_openings: None,
-           #[cfg(test)]
+            #[cfg(test)]
             pcs_setup: None,
         }
     }
 
     /// Compare this accumulator to the corresponding `ProverOpeningAccumulator` and panic
     /// if the openings appended differ from the prover's openings.
-   #[cfg(test)]
+    #[cfg(test)]
     pub fn compare_to(
         &mut self,
         prover_openings: ProverOpeningAccumulator<F, ProofTranscript>,
@@ -481,7 +482,7 @@ where
 
         let joint_commitment = PCS::combine_commitments(commitments, &rho_powers);
 
-       #[cfg(test)]
+        #[cfg(test)]
         'test: {
             if self.prover_openings.is_none() {
                 break 'test;
@@ -558,6 +559,8 @@ where
             rho_powers.push(rho_powers[i - 1] * rho);
         }
 
+        tracing::info!("rho = {}", rho);
+
         // Verify the sumcheck
         let (sumcheck_claim, r_sumcheck) = self.verify_batch_opening_reduction(
             &rho_powers,
@@ -593,6 +596,8 @@ where
             gamma_powers.push(gamma_powers[i - 1] * gamma);
         }
 
+        tracing::info!("gamma: {}", gamma);
+
         // Compute joint commitment = ∑ᵢ γⁱ⋅ commitmentᵢ
         let joint_commitment = PCS::combine_commitments(
             &self
@@ -615,6 +620,8 @@ where
                 *coeff * claim * lagrange_eval
             })
             .sum();
+
+        tracing::info!("Joint claim: {}", joint_claim);
 
         // Verify the reduced opening proof
         PCS::verify(
@@ -648,6 +655,8 @@ where
                 scaled_claim * coeff
             })
             .sum();
+
+        tracing::info!("combined_claim: {}", combined_claim);
 
         sumcheck_proof.verify(combined_claim, num_sumcheck_rounds, 2, transcript)
     }

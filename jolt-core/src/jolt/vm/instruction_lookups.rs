@@ -123,6 +123,15 @@ impl<T: CanonicalSerialize + CanonicalDeserialize> StructuredPolynomialData<T>
             .collect()
     }
 
+    fn read_write_values_grand_product(&self) -> Vec<&T> {
+        self.dim
+            .iter()
+            .chain(self.read_cts.iter())
+            .chain(self.E_polys.iter())
+            .chain(self.instruction_flags.iter())
+            .collect()
+    }
+
     fn init_final_values(&self) -> Vec<&T> {
         self.final_cts.iter().collect()
     }
@@ -134,6 +143,15 @@ impl<T: CanonicalSerialize + CanonicalDeserialize> StructuredPolynomialData<T>
             .chain(self.E_polys.iter_mut())
             .chain(self.instruction_flags.iter_mut())
             .chain([&mut self.lookup_outputs])
+            .collect()
+    }
+
+    fn read_write_values_grand_product_mut(&mut self) -> Vec<&mut T> {
+        self.dim
+            .iter_mut()
+            .chain(self.read_cts.iter_mut())
+            .chain(self.E_polys.iter_mut())
+            .chain(self.instruction_flags.iter_mut())
             .collect()
     }
 

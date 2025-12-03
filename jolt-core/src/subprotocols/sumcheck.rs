@@ -72,22 +72,13 @@ where
         for _round in 0..num_rounds {
             #[cfg(test)]
             self.sumcheck_sanity_check(eq_poly, previous_claim);
-            tracing::info!(
-                "rem num_rounds {} round: {} eq_poly: E1_len {} E2_len {}",
-                num_rounds,
-                _round,
-                eq_poly.E1_len,
-                eq_poly.E2_len
-            );
 
             let cubic_poly = self.compute_cubic(eq_poly, previous_claim);
             let compressed_poly = cubic_poly.compress();
-
             // append the prover's message to the transcript
             compressed_poly.append_to_transcript(transcript);
             // derive the verifier's challenge for the next round
             let r_j = transcript.challenge_scalar();
-            println!("r_j: {:?}", r_j);
 
             r.push(r_j);
             // bind polynomials to verifier's challenge
@@ -3680,6 +3671,46 @@ impl<F: JoltField, ProofTranscript: Transcript> SumcheckInstanceProof<F, ProofTr
 
             // evaluate the claimed degree-ell polynomial at r_i using the hint
             e = self.compressed_polys[i].eval_from_hint(&e, &r_i);
+        }
+
+        Ok((e, r))
+    }
+
+    pub fn verify_debug(
+        &self,
+        claim: F,
+        num_rounds: usize,
+        degree_bound: usize,
+        transcript: &mut ProofTranscript,
+    ) -> Result<(F, Vec<F>), ProofVerifyError> {
+        let mut e = claim;
+        let mut r: Vec<F> = Vec::new();
+
+        tracing::info!("e: {e}");
+
+        // verify that there is a univariate polynomial for each round
+        assert_eq!(self.compressed_polys.len(), num_rounds);
+        for i in 0..self.compressed_polys.len() {
+            // verify degree bound
+            if self.compressed_polys[i].degree() != degree_bound {
+                return Err(ProofVerifyError::InvalidInputLength(
+                    degree_bound,
+                    self.compressed_polys[i].degree(),
+                ));
+            }
+
+            tracing::info!("round {i} compressed_poly {:?}", self.compressed_polys[i]);
+
+            // append the prover's message to the transcript
+            self.compressed_polys[i].append_to_transcript(transcript);
+
+            //derive the verifier's challenge for the next round
+            let r_i = transcript.challenge_scalar();
+            r.push(r_i);
+
+            // evaluate the claimed degree-ell polynomial at r_i using the hint
+            e = self.compressed_polys[i].eval_from_hint(&e, &r_i);
+            tracing::info!("round {i} e: {e} r_i: {r_i}")
         }
 
         Ok((e, r))
