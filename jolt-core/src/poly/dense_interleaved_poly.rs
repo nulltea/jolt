@@ -26,7 +26,7 @@ pub struct DenseInterleavedPolynomial<F: JoltField> {
     /// dense grand product layer.
     /// The coefficients are in interleaved order:
     /// [L0, R0, L1, R1, L2, R2, L3, R3, ...]
-    pub(crate) coeffs: Vec<F>,
+    pub coeffs: Vec<F>,
     /// The effective length of `coeffs`. When binding, we update this length
     /// instead of truncating `coeffs`, which incurs the cost of dropping the
     /// truncated values.

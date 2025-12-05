@@ -609,7 +609,6 @@ where
         ]
         .concat();
 
-        // let _rho: F = transcript.challenge_scalar();
         opening_accumulator.append(
             &read_write_commits,
             r_read_write_opening.to_vec(),
@@ -617,13 +616,12 @@ where
             transcript,
         );
 
-        let _rho: F = transcript.challenge_scalar();
-        // opening_accumulator.append(
-        //     &commitments.init_final_values(),
-        //     r_init_final_opening.to_vec(),
-        //     &proof.openings.init_final_values(),
-        //     transcript,
-        // );
+        opening_accumulator.append(
+            &commitments.init_final_values(),
+            r_init_final_opening.to_vec(),
+            &proof.openings.init_final_values(),
+            transcript,
+        );
 
         Self::compute_verifier_openings(
             &mut proof.openings,

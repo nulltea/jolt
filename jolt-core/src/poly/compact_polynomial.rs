@@ -109,7 +109,7 @@ pub struct CompactPolynomial<T: SmallScalar, F: JoltField> {
     pub coeffs: Vec<T>,
     pub bound_coeffs: Vec<F>,
     binding_scratch_space: Option<Vec<F>>,
-    pub chunk_range: (usize, usize),
+    chunk_range: (usize, usize),
 }
 
 impl<T: SmallScalar, F: JoltField> CompactPolynomial<T, F> {
@@ -161,6 +161,10 @@ impl<T: SmallScalar, F: JoltField> CompactPolynomial<T, F> {
 
     pub fn len(&self) -> usize {
         self.len
+    }
+
+    pub fn chunk_range(&self) -> (usize, usize) {
+        self.chunk_range
     }
 
     pub fn into_masked_shard_mle(&self) -> Self {

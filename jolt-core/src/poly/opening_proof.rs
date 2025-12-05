@@ -76,7 +76,7 @@ where
 }
 
 impl<F: JoltField> ProverOpening<F> {
-    fn new(
+    pub fn new(
         polynomial: MultilinearPolynomial<F>,
         eq_poly: DensePolynomial<F>,
         opening_point: Vec<F>,
@@ -319,6 +319,8 @@ impl<F: JoltField, ProofTranscript: Transcript> ProverOpeningAccumulator<F, Proo
             })
             .sum();
 
+        // println!("combined_claim: {}", e);
+
         let mut r: Vec<F> = Vec::new();
         let mut compressed_polys: Vec<CompressedUniPoly<F>> = Vec::new();
 
@@ -367,10 +369,20 @@ impl<F: JoltField, ProofTranscript: Transcript> ProverOpeningAccumulator<F, Proo
             .openings
             .par_iter()
             .map(|opening| {
+                // println!("--------------");
+                // println!("poly: {:?}", opening.polynomial.coeffs_as_field_elements());
                 if remaining_sumcheck_rounds <= opening.opening_point.len() {
                     let mle_half = opening.polynomial.len() / 2;
                     let eval_0: F = (0..mle_half)
                         .map(|i| {
+                            // println!(
+                            //     "eval_0: {:?}",
+                            //     [
+                            //         opening.eq_poly.get_bound_coeff(i),
+                            //         opening.polynomial.get_bound_coeff(i),
+                            //     ]
+                            // );
+                            // println!("-----");
                             opening.polynomial.get_bound_coeff(i)
                                 * opening.eq_poly.get_bound_coeff(i)
                         })
@@ -383,9 +395,13 @@ impl<F: JoltField, ProofTranscript: Transcript> ProverOpeningAccumulator<F, Proo
                             let eq_bound_point = opening.eq_poly.get_bound_coeff(i + mle_half)
                                 + opening.eq_poly.get_bound_coeff(i + mle_half)
                                 - opening.eq_poly.get_bound_coeff(i);
+                            // println!("eval_2: {:?}", [eq_bound_point, poly_bound_point]);
+                            // println!("-----");
                             poly_bound_point * eq_bound_point
                         })
                         .sum();
+                    // println!("----------");
+
                     (eval_0, eval_2)
                 } else {
                     debug_assert!(!opening.polynomial.is_bound());
@@ -393,6 +409,11 @@ impl<F: JoltField, ProofTranscript: Transcript> ProverOpeningAccumulator<F, Proo
                         remaining_sumcheck_rounds - opening.opening_point.len() - 1;
                     let scaled_claim =
                         F::from_u64_unchecked(1 << remaining_variables) * opening.claim;
+                    // println!(
+                    //     "remaining_variables {} claim {} scaled_claim: {:?}",
+                    //     remaining_variables, opening.claim, scaled_claim
+                    // );
+                    // println!("----------");
                     (scaled_claim, scaled_claim)
                 }
             })
@@ -400,6 +421,8 @@ impl<F: JoltField, ProofTranscript: Transcript> ProverOpeningAccumulator<F, Proo
 
         let evals_combined_0: F = (0..evals.len()).map(|i| evals[i].0 * coeffs[i]).sum();
         let evals_combined_2: F = (0..evals.len()).map(|i| evals[i].1 * coeffs[i]).sum();
+        // println!("round evals: {:?}", [evals_combined_0, evals_combined_2]);
+        // println!("----------------------");
         let evals = vec![
             evals_combined_0,
             previous_round_claim - evals_combined_0,
@@ -559,8 +582,6 @@ where
             rho_powers.push(rho_powers[i - 1] * rho);
         }
 
-        tracing::info!("rho = {}", rho);
-
         // Verify the sumcheck
         let (sumcheck_claim, r_sumcheck) = self.verify_batch_opening_reduction(
             &rho_powers,
@@ -588,9 +609,6 @@ where
             return Err(ProofVerifyError::InternalError);
         }
 
-        tracing::info!("SUMCHECK VALID sumcheck_claim: {}", sumcheck_claim);
-        println!("SUMCHECK VALID sumcheck_claim: {}", sumcheck_claim);
-
         transcript.append_scalars(&reduced_opening_proof.sumcheck_claims);
 
         let gamma: F = transcript.challenge_scalar();
@@ -598,8 +616,6 @@ where
         for i in 1..self.openings.len() {
             gamma_powers.push(gamma_powers[i - 1] * gamma);
         }
-
-        tracing::info!("gamma: {}", gamma);
 
         // Compute joint commitment = ∑ᵢ γⁱ⋅ commitmentᵢ
         let joint_commitment = PCS::combine_commitments(
@@ -623,8 +639,6 @@ where
                 *coeff * claim * lagrange_eval
             })
             .sum();
-
-        tracing::info!("Joint claim: {}", joint_claim);
 
         // Verify the reduced opening proof
         PCS::verify(
@@ -658,8 +672,6 @@ where
                 scaled_claim * coeff
             })
             .sum();
-
-        tracing::info!("combined_claim: {}", combined_claim);
 
         sumcheck_proof.verify(combined_claim, num_sumcheck_rounds, 2, transcript)
     }

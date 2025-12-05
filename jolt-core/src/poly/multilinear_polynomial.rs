@@ -78,30 +78,6 @@ impl<F: JoltField> MultilinearPolynomial<F> {
         }
     }
 
-    pub fn into_masked_shard_mle(&self) -> Self {
-        match self {
-            MultilinearPolynomial::LargeScalars(poly) => {
-                tracing::warn!("dense into_masked_shard_mle");
-                MultilinearPolynomial::LargeScalars(poly.clone())
-            }
-            MultilinearPolynomial::U8Scalars(poly) => {
-                MultilinearPolynomial::U8Scalars(poly.into_masked_shard_mle())
-            }
-            MultilinearPolynomial::U16Scalars(poly) => {
-                MultilinearPolynomial::U16Scalars(poly.into_masked_shard_mle())
-            }
-            MultilinearPolynomial::U32Scalars(poly) => {
-                MultilinearPolynomial::U32Scalars(poly.into_masked_shard_mle())
-            }
-            MultilinearPolynomial::U64Scalars(poly) => {
-                MultilinearPolynomial::U64Scalars(poly.into_masked_shard_mle())
-            }
-            MultilinearPolynomial::I64Scalars(poly) => {
-                MultilinearPolynomial::I64Scalars(poly.into_masked_shard_mle())
-            }
-        }
-    }
-
     pub fn get_num_vars(&self) -> usize {
         match self {
             MultilinearPolynomial::LargeScalars(poly) => poly.get_num_vars(),
