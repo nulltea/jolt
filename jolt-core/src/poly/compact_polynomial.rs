@@ -1,4 +1,4 @@
-use std::ops::Index;
+use std::ops::{Index, Range};
 
 use super::multilinear_polynomial::{BindingOrder, PolynomialBinding};
 use crate::utils::math::Math;
@@ -109,7 +109,7 @@ pub struct CompactPolynomial<T: SmallScalar, F: JoltField> {
     pub coeffs: Vec<T>,
     pub bound_coeffs: Vec<F>,
     binding_scratch_space: Option<Vec<F>>,
-    chunk_range: (usize, usize),
+    pub chunk_range: (usize, usize),
 }
 
 impl<T: SmallScalar, F: JoltField> CompactPolynomial<T, F> {
@@ -161,6 +161,20 @@ impl<T: SmallScalar, F: JoltField> CompactPolynomial<T, F> {
 
     pub fn len(&self) -> usize {
         self.len
+    }
+
+    pub fn into_masked_shard_mle(&self) -> Self {
+        let mut masked_evals = vec![T::zero(); self.coeffs.len()];
+        masked_evals[self.chunk_range.0..self.chunk_range.1].copy_from_slice(self.coeffs_ref());
+
+        Self {
+            num_vars: self.coeffs.len().log_2(),
+            len: self.coeffs.len(),
+            chunk_range: (0, self.coeffs.len()),
+            coeffs: masked_evals,
+            bound_coeffs: vec![],
+            binding_scratch_space: None,
+        }
     }
 
     pub fn is_empty(&self) -> bool {

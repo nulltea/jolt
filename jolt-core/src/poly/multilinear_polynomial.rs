@@ -1,3 +1,5 @@
+use std::ops::Range;
+
 use crate::utils::{compute_dotproduct, math::Math};
 use ark_serialize::{
     CanonicalDeserialize, CanonicalSerialize, Compress, SerializationError, Valid, Validate,
@@ -53,6 +55,17 @@ impl<F: JoltField> MultilinearPolynomial<F> {
         }
     }
 
+    pub fn full_len(&self) -> usize {
+        match self {
+            MultilinearPolynomial::LargeScalars(poly) => poly.Z.len(),
+            MultilinearPolynomial::U8Scalars(poly) => poly.coeffs.len(),
+            MultilinearPolynomial::U16Scalars(poly) => poly.coeffs.len(),
+            MultilinearPolynomial::U32Scalars(poly) => poly.coeffs.len(),
+            MultilinearPolynomial::U64Scalars(poly) => poly.coeffs.len(),
+            MultilinearPolynomial::I64Scalars(poly) => poly.coeffs.len(),
+        }
+    }
+
     /// The current length of the polynomial
     pub fn len(&self) -> usize {
         match self {
@@ -62,6 +75,30 @@ impl<F: JoltField> MultilinearPolynomial<F> {
             MultilinearPolynomial::U32Scalars(poly) => poly.len(),
             MultilinearPolynomial::U64Scalars(poly) => poly.len(),
             MultilinearPolynomial::I64Scalars(poly) => poly.len(),
+        }
+    }
+
+    pub fn into_masked_shard_mle(&self) -> Self {
+        match self {
+            MultilinearPolynomial::LargeScalars(poly) => {
+                tracing::warn!("dense into_masked_shard_mle");
+                MultilinearPolynomial::LargeScalars(poly.clone())
+            }
+            MultilinearPolynomial::U8Scalars(poly) => {
+                MultilinearPolynomial::U8Scalars(poly.into_masked_shard_mle())
+            }
+            MultilinearPolynomial::U16Scalars(poly) => {
+                MultilinearPolynomial::U16Scalars(poly.into_masked_shard_mle())
+            }
+            MultilinearPolynomial::U32Scalars(poly) => {
+                MultilinearPolynomial::U32Scalars(poly.into_masked_shard_mle())
+            }
+            MultilinearPolynomial::U64Scalars(poly) => {
+                MultilinearPolynomial::U64Scalars(poly.into_masked_shard_mle())
+            }
+            MultilinearPolynomial::I64Scalars(poly) => {
+                MultilinearPolynomial::I64Scalars(poly.into_masked_shard_mle())
+            }
         }
     }
 

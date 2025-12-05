@@ -609,13 +609,13 @@ where
         ]
         .concat();
 
-        let _rho: F = transcript.challenge_scalar();
-        // opening_accumulator.append(
-        //     &read_write_commits,
-        //     r_read_write_opening.to_vec(),
-        //     &read_write_claims,
-        //     transcript,
-        // );
+        // let _rho: F = transcript.challenge_scalar();
+        opening_accumulator.append(
+            &read_write_commits,
+            r_read_write_opening.to_vec(),
+            &read_write_claims,
+            transcript,
+        );
 
         let _rho: F = transcript.challenge_scalar();
         // opening_accumulator.append(

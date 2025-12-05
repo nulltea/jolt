@@ -588,6 +588,9 @@ where
             return Err(ProofVerifyError::InternalError);
         }
 
+        tracing::info!("SUMCHECK VALID sumcheck_claim: {}", sumcheck_claim);
+        println!("SUMCHECK VALID sumcheck_claim: {}", sumcheck_claim);
+
         transcript.append_scalars(&reduced_opening_proof.sumcheck_claims);
 
         let gamma: F = transcript.challenge_scalar();
