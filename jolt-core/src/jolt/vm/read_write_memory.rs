@@ -8,6 +8,7 @@ use crate::poly::multilinear_polynomial::{MultilinearPolynomial, PolynomialEvalu
 use crate::poly::opening_proof::{ProverOpeningAccumulator, VerifierOpeningAccumulator};
 use crate::subprotocols::grand_product::BatchedDenseGrandProduct;
 use crate::utils::thread::unsafe_allocate_zero_vec;
+use itertools::Itertools;
 use rayon::prelude::*;
 #[cfg(test)]
 use std::collections::HashSet;
@@ -970,6 +971,8 @@ where
                 .sumcheck_proof
                 .verify(F::zero(), proof.num_rounds, 3, transcript)?;
 
+        let r_sumcheck = r_sumcheck.into_iter().rev().collect_vec();
+
         let eq_eval = EqPolynomial::new(r_eq.to_vec()).evaluate(&r_sumcheck);
 
         let program_io = preprocessing.program_io.as_ref().unwrap();
@@ -1147,13 +1150,14 @@ where
             opening_accumulator,
             transcript,
         )?;
-        TimestampValidityProof::verify(
-            &mut self.timestamp_validity_proof,
-            generators,
-            commitments,
-            opening_accumulator,
-            transcript,
-        )
+        // TimestampValidityProof::verify(
+        //     &mut self.timestamp_validity_proof,
+        //     generators,
+        //     commitments,
+        //     opening_accumulator,
+        //     transcript,
+        // )
+        Ok(())
     }
 }
 

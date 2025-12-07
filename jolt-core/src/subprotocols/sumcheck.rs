@@ -161,7 +161,7 @@ impl<F: JoltField, ProofTranscript: Transcript> SumcheckInstanceProof<F, ProofTr
                             poly.sumcheck_evals(
                                 poly_term_i,
                                 combined_degree,
-                                BindingOrder::HighToLow,
+                                BindingOrder::LowToHigh,
                             )
                         })
                         .collect();
@@ -196,7 +196,7 @@ impl<F: JoltField, ProofTranscript: Transcript> SumcheckInstanceProof<F, ProofTr
             // bound all tables to the verifier's challenge
             polys
                 .par_iter_mut()
-                .for_each(|poly| poly.bind(r_j, BindingOrder::HighToLow));
+                .for_each(|poly| poly.bind(r_j, BindingOrder::LowToHigh));
             previous_claim = univariate_poly.evaluate(&r_j);
             compressed_polys.push(compressed_poly);
         }
@@ -537,6 +537,9 @@ pub fn process_eq_sumcheck_round<F: JoltField, ProofTranscript: Transcript>(
     claim: &mut F,
     transcript: &mut ProofTranscript,
 ) -> F {
+    println!("-------");
+    println!("eval points: {:?}", quadratic_evals);
+    println!("--------------");
     let scalar_times_w_i = eq_poly.current_scalar * eq_poly.w[eq_poly.current_index - 1];
 
     let cubic_poly = UniPoly::from_linear_times_quadratic_with_hint(

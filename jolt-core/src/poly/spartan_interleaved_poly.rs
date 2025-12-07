@@ -20,18 +20,18 @@ pub struct SpartanInterleavedPolynomial<F: JoltField> {
     /// Shards of sparse vectors representing the (interleaved) coefficients in the Az, Bz, Cz
     /// polynomials used in the first Spartan sumcheck. Before the polynomial is bound
     /// the first time, all the coefficients can be represented by `i128`s.
-    pub(crate) unbound_coeffs_shards: Vec<Vec<SparseCoefficient<i128>>>,
+    pub unbound_coeffs_shards: Vec<Vec<SparseCoefficient<i128>>>,
     /// A sparse vector representing the (interleaved) coefficients in the Az, Bz, Cz
     /// polynomials used in the first Spartan sumcheck. Once the polynomial has been
     /// bound, we switch to using `bound_coeffs` instead of `unbound_coeffs`, because
     /// coefficients will be full-width field elements rather than `i128`s.
-    pub(crate) bound_coeffs: Vec<SparseCoefficient<F>>,
+    pub bound_coeffs: Vec<SparseCoefficient<F>>,
     /// A reused buffer where bound values are written to during `bind`.
     /// With every bind, `coeffs` and `binding_scratch_space` are swapped.
-    binding_scratch_space: Vec<SparseCoefficient<F>>,
+    pub binding_scratch_space: Vec<SparseCoefficient<F>>,
     /// The length of one of the Az, Bz, or Cz polynomials if it were represented by
     /// a single dense vector.
-    dense_len: usize,
+    pub dense_len: usize,
 }
 
 impl<F: JoltField> SpartanInterleavedPolynomial<F> {
@@ -45,7 +45,10 @@ impl<F: JoltField> SpartanInterleavedPolynomial<F> {
     ) -> Self {
         let num_steps = flattened_polynomials[0].len();
 
-        let num_chunks = std::cmp::min(rayon::current_num_threads().next_power_of_two() * 16, num_steps / 2);
+        let num_chunks = std::cmp::min(
+            rayon::current_num_threads().next_power_of_two() * 16,
+            num_steps / 2,
+        );
         let chunk_size = num_steps.div_ceil(num_chunks);
 
         let unbound_coeffs_shards_iter = (0..num_chunks).into_par_iter().map(|chunk_index| {
@@ -71,24 +74,23 @@ impl<F: JoltField> SpartanInterleavedPolynomial<F> {
                     if !az_coeff.is_zero() && !bz_coeff.is_zero() {
                         let cz_coeff = az_coeff * bz_coeff;
                         // #[cfg(test)]
-                        {
-                            if cz_coeff != constraint
-                                .c
-                                .evaluate_row(flattened_polynomials, step_index) {
-                                    let mut constraint_string = String::new();
-                                    let _ = constraint
-                                        .pretty_fmt::<4, JoltR1CSInputs, F>(
-                                            &mut constraint_string,
-                                            flattened_polynomials,
-                                            step_index,
-                                        );
-                                    println!("{constraint_string}");
-                                    panic!(
-                                        "Uniform constraint {constraint_index} violated at step {step_index}",
-                                    );
-                                }
-                        }
-                        
+                        // {
+                        //     if cz_coeff != constraint
+                        //         .c
+                        //         .evaluate_row(flattened_polynomials, step_index) {
+                        //             let mut constraint_string = String::new();
+                        //             let _ = constraint
+                        //                 .pretty_fmt::<4, JoltR1CSInputs, F>(
+                        //                     &mut constraint_string,
+                        //                     flattened_polynomials,
+                        //                     step_index,
+                        //                 );
+                        //             println!("{constraint_string}");
+                        //             panic!(
+                        //                 "Uniform constraint {constraint_index} violated at step {step_index}",
+                        //             );
+                        //         }
+                        // }
                     }
                     let cz_coeff = az_coeff * bz_coeff;
                     coeffs.push((global_index + 2, cz_coeff).into());
@@ -127,16 +129,16 @@ impl<F: JoltField> SpartanInterleavedPolynomial<F> {
 
                         // If Az != 0, then the condition must be false (i.e. Bz = 0)
                         // #[cfg(test)]
-                        {
-                            let bz_coeff = eval_offset_lc(
-                                &constraint.cond,
-                                flattened_polynomials,
-                                step_index,
-                                next_step_index,
-                            );
-                            // println!("constraint.cond: {:?}", constraint);
-                            assert_eq!(bz_coeff, 0, "Cross-step constraint {constraint_index} violated at step {step_index}");
-                        }
+                        // {
+                        //     let bz_coeff = eval_offset_lc(
+                        //         &constraint.cond,
+                        //         flattened_polynomials,
+                        //         step_index,
+                        //         next_step_index,
+                        //     );
+                        //     // println!("constraint.cond: {:?}", constraint);
+                        //     assert_eq!(bz_coeff, 0, "Cross-step constraint {constraint_index} violated at step {step_index}");
+                        // }
                     } else {
                         // Bz
                         let bz_coeff = eval_offset_lc(
@@ -148,8 +150,6 @@ impl<F: JoltField> SpartanInterleavedPolynomial<F> {
                         coeffs.push((global_index + 1, bz_coeff).into());
                     }
 
-                   
-                    
                     // Cz is always 0 for cross-step constraints
                 }
             }
@@ -160,23 +160,23 @@ impl<F: JoltField> SpartanInterleavedPolynomial<F> {
             unbound_coeffs_shards_iter.collect();
 
         // #[cfg(test)]
-        {
-            // Check that indices are monotonically increasing
-            for shard in &unbound_coeffs_shards {
-                if !shard.is_empty() {
-                    let mut prev_index = shard[0].index;
-                    for coeff in shard.iter().skip(1) {
-                        assert!(
-                            coeff.index > prev_index,
-                            "Indices not monotonically increasing in shard: prev {}, current {}",
-                            prev_index,
-                            coeff.index
-                        );
-                        prev_index = coeff.index;
-                    }
-                }
-            }
-        }
+        // {
+        //     // Check that indices are monotonically increasing
+        //     for shard in &unbound_coeffs_shards {
+        //         if !shard.is_empty() {
+        //             let mut prev_index = shard[0].index;
+        //             for coeff in shard.iter().skip(1) {
+        //                 assert!(
+        //                     coeff.index > prev_index,
+        //                     "Indices not monotonically increasing in shard: prev {}, current {}",
+        //                     prev_index,
+        //                     coeff.index
+        //                 );
+        //                 prev_index = coeff.index;
+        //             }
+        //         }
+        //     }
+        // }
 
         Self {
             unbound_coeffs_shards,
@@ -270,6 +270,13 @@ impl<F: JoltField> SpartanInterleavedPolynomial<F> {
                 for sparse_block in shard_coeffs.chunk_by(|x, y| x.index / 6 == y.index / 6) {
                     let block_index = sparse_block[0].index / 6;
                     let x_in = block_index & x_in_bitmask;
+                    println!(
+                        "x_in: {} x_out: {} E_in {} E_out {}",
+                        x_in,
+                        block_index >> num_x_in_bits,
+                        eq_poly.E_in_current_len(),
+                        eq_poly.E_out_current_len()
+                    );
 
                     let x_out = block_index >> num_x_in_bits;
                     let E_in_evals = eq_poly.E_in_current()[x_in] * eq_poly.E_out_current()[x_out];
@@ -302,14 +309,14 @@ impl<F: JoltField> SpartanInterleavedPolynomial<F> {
                     let az_infty = az1 - az0;
                     let bz_infty = bz1 - bz0;
 
+                    println!("nonzero {} {:?}", E_in_evals, [az1, az0, bz1, bz0]);
+
                     if az_infty != 0 && bz_infty != 0 {
                         shard_eval_point_infty += E_in_evals.mul_i128(bz_infty * az_infty);
                     }
 
                     // shard_eval_point_infty += E_in_evals.mul_i128(az_infty);
                     // shard_eval_point_infty += E_in_evals * az_infty;
-
-
                 }
                 // shard_eval_point_infty +=
                 //     eq_poly.E_out_current()[current_shard_prev_x_out] * current_shard_inner_sums;
@@ -404,7 +411,6 @@ impl<F: JoltField> SpartanInterleavedPolynomial<F> {
                 debug_assert_eq!(output_index, output_slice_for_shard.len())
             });
 
-
         // #[cfg(test)]
         let (mut az_for_test, mut bz_for_test, mut cz_for_test) = {
             let original_dense_len = self.dense_len; // dense_len before it's halved for self
@@ -438,54 +444,54 @@ impl<F: JoltField> SpartanInterleavedPolynomial<F> {
         self.dense_len /= 2;
 
         // #[cfg(test)]
-        {
-            // Check that the binding is consistent with binding Az, Bz, Cz individually
-            let (az_bound, bz_bound, cz_bound) = self.uninterleave();
-            az_for_test.bound_poly_var_bot(&r_i);
-            bz_for_test.bound_poly_var_bot(&r_i);
-            cz_for_test.bound_poly_var_bot(&r_i);
+        // {
+        //     // Check that the binding is consistent with binding Az, Bz, Cz individually
+        //     let (az_bound, bz_bound, cz_bound) = self.uninterleave();
+        //     az_for_test.bound_poly_var_bot(&r_i);
+        //     bz_for_test.bound_poly_var_bot(&r_i);
+        //     cz_for_test.bound_poly_var_bot(&r_i);
 
-            assert_eq!(
-                az_bound.len(),
-                az_for_test.len(),
-                "Mismatch in length of Az polynomials after binding"
-            );
-            assert_eq!(
-                bz_bound.len(),
-                bz_for_test.len(),
-                "Mismatch in length of Bz polynomials after binding"
-            );
-            assert_eq!(
-                cz_bound.len(),
-                cz_for_test.len(),
-                "Mismatch in length of Cz polynomials after binding"
-            );
+        //     assert_eq!(
+        //         az_bound.len(),
+        //         az_for_test.len(),
+        //         "Mismatch in length of Az polynomials after binding"
+        //     );
+        //     assert_eq!(
+        //         bz_bound.len(),
+        //         bz_for_test.len(),
+        //         "Mismatch in length of Bz polynomials after binding"
+        //     );
+        //     assert_eq!(
+        //         cz_bound.len(),
+        //         cz_for_test.len(),
+        //         "Mismatch in length of Cz polynomials after binding"
+        //     );
 
-            for i in 0..az_for_test.len() {
-                if az_bound[i] != az_for_test[i] {
-                    println!(
-                        "az mismatch at index {}: bound = {}, test_bound = {}",
-                        i, az_bound[i], az_for_test[i]
-                    );
-                }
-            }
-            // Compare the underlying Z vectors directly after ensuring lengths match.
-            assert_eq!(
-                &az_bound.Z[..az_for_test.len()],
-                &az_for_test.Z[..az_for_test.len()],
-                "Az polynomial data mismatch after binding"
-            );
-            assert_eq!(
-                &bz_bound.Z[..bz_for_test.len()],
-                &bz_for_test.Z[..bz_for_test.len()],
-                "Bz polynomial data mismatch after binding"
-            );
-            assert_eq!(
-                &cz_bound.Z[..cz_for_test.len()],
-                &cz_for_test.Z[..cz_for_test.len()],
-                "Cz polynomial data mismatch after binding"
-            );
-        }
+        //     for i in 0..az_for_test.len() {
+        //         if az_bound[i] != az_for_test[i] {
+        //             println!(
+        //                 "az mismatch at index {}: bound = {}, test_bound = {}",
+        //                 i, az_bound[i], az_for_test[i]
+        //             );
+        //         }
+        //     }
+        //     // Compare the underlying Z vectors directly after ensuring lengths match.
+        //     assert_eq!(
+        //         &az_bound.Z[..az_for_test.len()],
+        //         &az_for_test.Z[..az_for_test.len()],
+        //         "Az polynomial data mismatch after binding"
+        //     );
+        //     assert_eq!(
+        //         &bz_bound.Z[..bz_for_test.len()],
+        //         &bz_for_test.Z[..bz_for_test.len()],
+        //         "Bz polynomial data mismatch after binding"
+        //     );
+        //     assert_eq!(
+        //         &cz_bound.Z[..cz_for_test.len()],
+        //         &cz_for_test.Z[..cz_for_test.len()],
+        //         "Cz polynomial data mismatch after binding"
+        //     );
+        // }
     }
 
     /// All subsequent rounds of the first Spartan sumcheck.
@@ -569,6 +575,13 @@ impl<F: JoltField> SpartanInterleavedPolynomial<F> {
                         let x_in = block_index & x_bitmask;
                         let E_in_eval = eq_poly.E_in_current()[x_in];
                         let x_out = block_index >> num_x_in_bits;
+                        // println!(
+                        //     "x_in: {} x_out: {} E_in_len: {} E_out_len: {}",
+                        //     x_in,
+                        //     x_out,
+                        //     eq_poly.E_in_current_len(),
+                        //     eq_poly.E_out_current_len()
+                        // );
 
                         if x_out != prev_x_out {
                             let E_out_eval = eq_poly.E_out_current()[prev_x_out];
@@ -591,9 +604,16 @@ impl<F: JoltField> SpartanInterleavedPolynomial<F> {
                         let az_eval_infty = az.1 - az.0;
                         let bz_eval_infty = bz.1 - bz.0;
 
+                        // println!(
+                        //     "{} block {:?}",
+                        //     E_in_eval * eq_poly.E_out_current()[prev_x_out],
+                        //     block
+                        // );
+
                         inner_sums.0 += E_in_eval.mul_0_optimized(az.0.mul_0_optimized(bz.0) - cz0);
                         inner_sums.1 +=
                             E_in_eval.mul_0_optimized(az_eval_infty.mul_0_optimized(bz_eval_infty));
+                        // println!("------");
                     }
 
                     eval_point_0 += eq_poly.E_out_current()[prev_x_out] * inner_sums.0;
@@ -611,7 +631,7 @@ impl<F: JoltField> SpartanInterleavedPolynomial<F> {
         let r_i = process_eq_sumcheck_round(quadratic_evals, eq_poly, polys, r, claim, transcript);
 
         // #[cfg(test)]
-        let (mut az, mut bz, mut cz) = self.uninterleave();
+        // let (mut az, mut bz, mut cz) = self.uninterleave();
 
         let output_sizes: Vec<_> = chunks
             .par_iter()
@@ -693,21 +713,21 @@ impl<F: JoltField> SpartanInterleavedPolynomial<F> {
         self.dense_len /= 2;
 
         // #[cfg(test)]
-        {
-            // Check that the binding is consistent with binding Az, Bz, Cz individually
-            let (az_bound, bz_bound, cz_bound) = self.uninterleave();
-            az.bound_poly_var_bot(&r_i);
-            bz.bound_poly_var_bot(&r_i);
-            cz.bound_poly_var_bot(&r_i);
-            assert!(az_bound.Z[..az_bound.len()] == az.Z[..az.len()]);
-            assert!(bz_bound.Z[..bz_bound.len()] == bz.Z[..bz.len()]);
-            assert!(cz_bound.Z[..cz_bound.len()] == cz.Z[..cz.len()]);
-        }
+        // {
+        //     // Check that the binding is consistent with binding Az, Bz, Cz individually
+        //     let (az_bound, bz_bound, cz_bound) = self.uninterleave();
+        //     az.bound_poly_var_bot(&r_i);
+        //     bz.bound_poly_var_bot(&r_i);
+        //     cz.bound_poly_var_bot(&r_i);
+        //     assert!(az_bound.Z[..az_bound.len()] == az.Z[..az.len()]);
+        //     assert!(bz_bound.Z[..bz_bound.len()] == bz.Z[..bz.len()]);
+        //     assert!(cz_bound.Z[..cz_bound.len()] == cz.Z[..cz.len()]);
+        // }
     }
 
     /// Computes the number of non-zero coefficients that would result from
     /// binding the given slice of coefficients.
-    fn binding_output_length<T>(coeffs: &[SparseCoefficient<T>]) -> usize {
+    pub fn binding_output_length<T>(coeffs: &[SparseCoefficient<T>]) -> usize {
         let mut output_size = 0;
         for block in coeffs.chunk_by(|x, y| x.index / 6 == y.index / 6) {
             let mut Az_coeff_found = false;

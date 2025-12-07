@@ -606,6 +606,7 @@ where
             .sum();
 
         if sumcheck_claim != expected_sumcheck_claim {
+            tracing::error!("sumcheck claim mismatch");
             return Err(ProofVerifyError::InternalError);
         }
 

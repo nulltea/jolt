@@ -30,16 +30,6 @@ pub struct GruenSplitEqPolynomial<F> {
     pub E_out_vec: Vec<Vec<F>>,
 }
 
-/// Old struct for split equality polynomial, without Gruen's optimization
-/// TODO: remove all usage of this struct with the new one
-pub struct SplitEqPolynomial<F> {
-    pub num_vars: usize,
-    pub E1: Vec<F>,
-    pub E1_len: usize,
-    pub E2: Vec<F>,
-    pub E2_len: usize,
-}
-
 impl<F: JoltField> GruenSplitEqPolynomial<F> {
     #[tracing::instrument(skip_all, name = "GruenSplitEqPolynomial::new")]
     pub fn new(w: &[F]) -> Self {
@@ -62,6 +52,36 @@ impl<F: JoltField> GruenSplitEqPolynomial<F> {
             w: w.to_vec(),
             E_in_vec,
             E_out_vec,
+        }
+    }
+
+    pub fn new_worker(w: &[F], log_num_workers: usize, worker_idx: usize) -> Self {
+        let num_workers = 1usize << log_num_workers;
+        assert!(worker_idx < num_workers);
+
+        // Build the full (non-distributed) GruenSplitEqPolynomial
+        let base = Self::new(w);
+
+        // Chunk helper: for each level of E_out_vec, take this worker's slice
+        let E_in_vec = base
+            .E_in_vec
+            .into_iter()
+            .map(|level| {
+                let rows = level.len();
+                let rows_per = (rows + num_workers - 1) / num_workers; // ceil(rows / num_workers)
+                let i0 = core::cmp::min(worker_idx * rows_per, rows);
+                let i1 = core::cmp::min((worker_idx + 1) * rows_per, rows);
+                level[i0..i1].to_vec()
+            })
+            .collect();
+
+        // Inner part is not sharded (same on every worker), analogous to E1 in SplitEqPolynomial
+        Self {
+            current_index: base.current_index,
+            current_scalar: base.current_scalar,
+            w: base.w,
+            E_in_vec,
+            E_out_vec: base.E_out_vec,
         }
     }
 
@@ -218,7 +238,7 @@ impl<F: JoltField> GruenSplitEqPolynomial<F> {
         }
     }
 
-    #[cfg(test)]
+    // #[cfg(test)]
     pub fn merge(&self) -> DensePolynomial<F> {
         let evals = EqPolynomial::evals(&self.w[..self.current_index])
             .iter()
@@ -226,6 +246,16 @@ impl<F: JoltField> GruenSplitEqPolynomial<F> {
             .collect();
         DensePolynomial::new(evals)
     }
+}
+
+/// Old struct for split equality polynomial, without Gruen's optimization
+/// TODO: remove all usage of this struct with the new one
+pub struct SplitEqPolynomial<F> {
+    pub num_vars: usize,
+    pub E1: Vec<F>,
+    pub E1_len: usize,
+    pub E2: Vec<F>,
+    pub E2_len: usize,
 }
 
 impl<F: JoltField> SplitEqPolynomial<F> {

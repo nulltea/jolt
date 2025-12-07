@@ -137,7 +137,7 @@ where
             (&read_write_memory_polys.t_read_rs2).try_into().unwrap(),
             (&read_write_memory_polys.t_read_ram).try_into().unwrap(),
         ];
-        let M = read_timestamps[0].len();
+        let M = read_timestamps[0].coeffs.len();
 
         #[cfg(test)]
         let mut init_tuples: HashSet<(u32, u32)> = HashSet::new();
@@ -658,10 +658,10 @@ where
     PCS: CommitmentScheme<ProofTranscript, Field = F>,
     ProofTranscript: Transcript,
 {
-    multiset_hashes: MultisetHashes<F>,
-    openings: TimestampRangeCheckOpenings<F>,
-    exogenous_openings: ReadTimestampOpenings<F>,
-    batched_grand_product: BatchedGrandProductProof<PCS, ProofTranscript>,
+    pub multiset_hashes: MultisetHashes<F>,
+    pub openings: TimestampRangeCheckOpenings<F>,
+    pub exogenous_openings: ReadTimestampOpenings<F>,
+    pub batched_grand_product: BatchedGrandProductProof<PCS, ProofTranscript>,
 }
 
 impl<F, PCS, ProofTranscript> TimestampValidityProof<F, PCS, ProofTranscript>

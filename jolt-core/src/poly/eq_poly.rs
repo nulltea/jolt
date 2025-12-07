@@ -27,6 +27,19 @@ impl<F: JoltField> EqPolynomial<F> {
 
     #[tracing::instrument(skip_all, name = "EqPolynomial::evals", level = "trace")]
     /// Computes the table of coefficients: `{eq(r, x) for all x in {0, 1}^n}`
+    pub fn evals_worker(r: &[F], log_num_workers: usize, worker_idx: usize) -> Vec<F> {
+        let chunk_size = 1 << (r.len() - log_num_workers);
+
+        // let worker_idx = if worker_idx == 1 { 0 } else { 1 };
+
+        let mut evals = Self::evals(r);
+        evals
+            .drain(worker_idx * chunk_size..(worker_idx + 1) * chunk_size)
+            .collect()
+    }
+
+    #[tracing::instrument(skip_all, name = "EqPolynomial::evals", level = "trace")]
+    /// Computes the table of coefficients: `{eq(r, x) for all x in {0, 1}^n}`
     pub fn evals(r: &[F]) -> Vec<F> {
         match r.len() {
             0..=PARALLEL_THRESHOLD => Self::evals_serial(r, None),
