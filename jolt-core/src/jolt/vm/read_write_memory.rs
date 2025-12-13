@@ -1150,13 +1150,13 @@ where
             opening_accumulator,
             transcript,
         )?;
-        // TimestampValidityProof::verify(
-        //     &mut self.timestamp_validity_proof,
-        //     generators,
-        //     commitments,
-        //     opening_accumulator,
-        //     transcript,
-        // )
+        TimestampValidityProof::verify(
+            &mut self.timestamp_validity_proof,
+            generators,
+            commitments,
+            opening_accumulator,
+            transcript,
+        )?;
         Ok(())
     }
 }

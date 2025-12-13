@@ -60,6 +60,14 @@ pub enum SpartanError {
     #[error("InvalidInnerSumcheckClaim")]
     InvalidInnerSumcheckClaim,
 
+    /// returned when the recursive sumcheck proof fails
+    #[error("InvalidShiftSumcheckProof")]
+    InvalidShiftSumcheckProof,
+
+    /// returned when the final sumcheck opening proof fails
+    #[error("InvalidShiftSumcheckClaim")]
+    InvalidShiftSumcheckClaim,
+
     /// returned if the supplied witness is not of the right length
     #[error("InvalidWitnessLength")]
     InvalidWitnessLength,
@@ -142,7 +150,7 @@ where
                 transcript,
             );
         let outer_sumcheck_r: Vec<F> = outer_sumcheck_r.into_iter().rev().collect();
-       
+
         drop_in_background_thread((az_bz_cz_poly, eq_tau));
 
         ProofTranscript::append_scalars(transcript, &outer_sumcheck_claims);
@@ -212,7 +220,6 @@ where
         assert_eq!(poly_z.len(), poly_ABC.len());
 
         let num_rounds_inner_sumcheck = poly_ABC.len().log_2();
-
 
         let mut polys = vec![
             MultilinearPolynomial::LargeScalars(poly_ABC),
@@ -426,7 +433,7 @@ where
         */
 
         let num_rounds_shift_sumcheck = num_steps_bits;
-        let (claim_shift_sumcheck, shift_sumcheck_r) = self
+        let (claim_shift_sumcheck, mut shift_sumcheck_r) = self
             .shift_sumcheck_proof
             .verify(
                 self.shift_sumcheck_claim,
@@ -434,7 +441,8 @@ where
                 2,
                 transcript,
             )
-            .map_err(|_| SpartanError::InvalidInnerSumcheckProof)?;
+            .map_err(|_| SpartanError::InvalidShiftSumcheckProof)?;
+        shift_sumcheck_r.reverse();
 
         let eval_z_shift_sumcheck = key.evaluate_z_mle_with_segment_evals(
             &self.shift_sumcheck_witness_evals,
@@ -446,7 +454,7 @@ where
         let claim_shift_sumcheck_expected = eval_z_shift_sumcheck * eq_plus_one_shift_sumcheck;
 
         if claim_shift_sumcheck != claim_shift_sumcheck_expected {
-            return Err(SpartanError::InvalidInnerSumcheckClaim);
+            return Err(SpartanError::InvalidShiftSumcheckClaim);
         }
 
         let flattened_commitments: Vec<_> = I::flatten::<C>()

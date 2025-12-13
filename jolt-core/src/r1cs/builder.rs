@@ -3,7 +3,10 @@ use super::{
     key::{CrossStepR1CS, CrossStepR1CSConstraint, SparseEqualityItem},
     ops::{Term, Variable, LC},
 };
-use crate::poly::{multilinear_polynomial::MultilinearPolynomial, spartan_interleaved_poly::SpartanInterleavedPolynomial};
+use crate::poly::{
+    multilinear_polynomial::MultilinearPolynomial,
+    spartan_interleaved_poly::SpartanInterleavedPolynomial,
+};
 use crate::{
     field::JoltField,
     jolt::vm::JoltPolynomials,

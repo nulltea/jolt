@@ -186,6 +186,15 @@ impl<F: JoltField> SpartanInterleavedPolynomial<F> {
         }
     }
 
+    pub fn new_bound(bound_coeffs: Vec<SparseCoefficient<F>>) -> Self {
+        Self {
+            dense_len: bound_coeffs.len(), // TODO: maybe wrong
+            bound_coeffs,
+            binding_scratch_space: vec![],
+            unbound_coeffs_shards: vec![],
+        }
+    }
+
     // #[cfg(test)]
     fn uninterleave(&self) -> (DensePolynomial<F>, DensePolynomial<F>, DensePolynomial<F>) {
         let mut az = vec![F::zero(); self.dense_len];
@@ -575,13 +584,6 @@ impl<F: JoltField> SpartanInterleavedPolynomial<F> {
                         let x_in = block_index & x_bitmask;
                         let E_in_eval = eq_poly.E_in_current()[x_in];
                         let x_out = block_index >> num_x_in_bits;
-                        // println!(
-                        //     "x_in: {} x_out: {} E_in_len: {} E_out_len: {}",
-                        //     x_in,
-                        //     x_out,
-                        //     eq_poly.E_in_current_len(),
-                        //     eq_poly.E_out_current_len()
-                        // );
 
                         if x_out != prev_x_out {
                             let E_out_eval = eq_poly.E_out_current()[prev_x_out];
@@ -604,16 +606,9 @@ impl<F: JoltField> SpartanInterleavedPolynomial<F> {
                         let az_eval_infty = az.1 - az.0;
                         let bz_eval_infty = bz.1 - bz.0;
 
-                        // println!(
-                        //     "{} block {:?}",
-                        //     E_in_eval * eq_poly.E_out_current()[prev_x_out],
-                        //     block
-                        // );
-
                         inner_sums.0 += E_in_eval.mul_0_optimized(az.0.mul_0_optimized(bz.0) - cz0);
                         inner_sums.1 +=
                             E_in_eval.mul_0_optimized(az_eval_infty.mul_0_optimized(bz_eval_infty));
-                        // println!("------");
                     }
 
                     eval_point_0 += eq_poly.E_out_current()[prev_x_out] * inner_sums.0;

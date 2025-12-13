@@ -245,7 +245,8 @@ where
 ///   o   o o   o  o   o o   o  <- layers[layers.len() - 2]
 ///       ...          ...
 pub struct BatchedDenseGrandProduct<F: JoltField> {
-    layers: Vec<DenseInterleavedPolynomial<F>>,
+    pub layers: Vec<DenseInterleavedPolynomial<F>>,
+    pub batch_size: usize,
 }
 
 impl<F, PCS, ProofTranscript> BatchedGrandProduct<F, PCS, ProofTranscript>
@@ -274,7 +275,7 @@ where
             layers.push(previous_layer.layer_output());
         }
 
-        Self { layers }
+        Self { layers, batch_size }
     }
     #[tracing::instrument(skip_all, name = "BatchedDenseGrandProduct::construct_with_config")]
     fn construct_with_config(leaves: Self::Leaves, _config: Self::Config) -> Self {

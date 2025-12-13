@@ -106,10 +106,12 @@ impl SmallScalar for i64 {
 pub struct CompactPolynomial<T: SmallScalar, F: JoltField> {
     num_vars: usize,
     len: usize,
+    chunk_range: (usize, usize),
     pub coeffs: Vec<T>,
     pub bound_coeffs: Vec<F>,
     binding_scratch_space: Option<Vec<F>>,
-    chunk_range: (usize, usize),
+    full_len: usize,
+    global_chunk_range: Option<(usize, usize)>,
 }
 
 impl<T: SmallScalar, F: JoltField> CompactPolynomial<T, F> {
@@ -123,32 +125,44 @@ impl<T: SmallScalar, F: JoltField> CompactPolynomial<T, F> {
         CompactPolynomial {
             num_vars: coeffs.len().log_2(),
             len: coeffs.len(),
+            full_len: coeffs.len(),
             chunk_range: (0, coeffs.len()),
             coeffs,
             bound_coeffs: vec![],
             binding_scratch_space: None,
+            global_chunk_range: None,
         }
     }
 
-    pub fn shard_from_coeffs(coeffs: Vec<T>, shard_nv: usize, shard_idx: usize) -> Self {
+    pub fn new_shard(
+        coeffs: Vec<T>,
+        full_len: usize,
+        log_num_workers: usize,
+        worker_idx: usize,
+    ) -> Self {
         assert!(
             utils::is_power_of_two(coeffs.len()),
             "Multilinear polynomials must be made from a power of 2 (not {})",
             coeffs.len()
         );
 
+        let shard_nv = full_len.log_2() - log_num_workers;
+        let local_nv = coeffs.len().log_2();
         let chunk_size = 1 << shard_nv;
 
-        let chunk_range = if shard_nv == coeffs.len().log_2() {
-            (0, coeffs.len())
+        let chunk_global_range = (worker_idx * chunk_size, (worker_idx + 1) * chunk_size);
+        let (chunk_range, global_chunk_range) = if shard_nv == local_nv {
+            ((0, coeffs.len()), Some(chunk_global_range))
         } else {
-            (shard_idx * chunk_size, (shard_idx + 1) * chunk_size)
+            (chunk_global_range, Some(chunk_global_range))
         };
 
         CompactPolynomial {
             num_vars: shard_nv,
             len: chunk_size,
+            full_len,
             chunk_range,
+            global_chunk_range,
             coeffs,
             bound_coeffs: vec![],
             binding_scratch_space: None,
@@ -163,22 +177,16 @@ impl<T: SmallScalar, F: JoltField> CompactPolynomial<T, F> {
         self.len
     }
 
+    pub fn full_len(&self) -> usize {
+        self.full_len
+    }
+
     pub fn chunk_range(&self) -> (usize, usize) {
         self.chunk_range
     }
 
-    pub fn into_masked_shard_mle(&self) -> Self {
-        let mut masked_evals = vec![T::zero(); self.coeffs.len()];
-        masked_evals[self.chunk_range.0..self.chunk_range.1].copy_from_slice(self.coeffs_ref());
-
-        Self {
-            num_vars: self.coeffs.len().log_2(),
-            len: self.coeffs.len(),
-            chunk_range: (0, self.coeffs.len()),
-            coeffs: masked_evals,
-            bound_coeffs: vec![],
-            binding_scratch_space: None,
-        }
+    pub fn chunk_global_range(&self) -> (usize, usize) {
+        self.global_chunk_range.unwrap_or((0, self.full_len))
     }
 
     pub fn is_empty(&self) -> bool {
@@ -200,13 +208,11 @@ impl<T: SmallScalar, F: JoltField> CompactPolynomial<T, F> {
         &self.coeffs[self.chunk_range.0..self.chunk_range.1]
     }
 
-    pub fn into_distributed_commit_form(&self, len: usize) -> Vec<T> {
-        if len == self.len() {
-            return self.coeffs_ref().to_vec();
-        }
-        let mut coeffs = vec![T::zero(); len];
+    pub fn into_distributed_commit_form(&self) -> Vec<T> {
+        let (start, end) = self.chunk_global_range();
+        let mut coeffs = vec![T::zero(); self.full_len];
         coeffs.splice(
-            self.chunk_range.0..self.chunk_range.1,
+            start..end,
             self.coeffs[self.chunk_range.0..self.chunk_range.1].to_vec(),
         );
         coeffs

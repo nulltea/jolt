@@ -187,12 +187,12 @@ impl<const C: usize, F: JoltField, I: ConstraintInput> UniformSpartanKey<C, I, F
 
     /// (Prover) Evaluates RLC over A, B, C of: [A(r_x, y_var || r_x_step), A_shift(..)] for all y_var
     #[tracing::instrument(skip_all, name = "UniformSpartanKey::evaluate_r1cs_mle_rlc")]
-    pub fn evaluate_matrix_mle_partial(&self, r_constr: &[F], r_step: &[F], r_rlc: F) -> Vec<F> {
+    pub fn evaluate_matrix_mle_partial(&self, r_constr: &[F], _r_step: &[F], r_rlc: F) -> Vec<F> {
         assert_eq!(
             r_constr.len(),
             (self.uniform_r1cs.num_rows + 1).next_power_of_two().log_2()
         );
-        assert_eq!(r_step.len(), self.num_steps.log_2());
+        // assert_eq!(r_step.len(), self.num_steps.log_2() - );
 
         let eq_rx_constr = EqPolynomial::evals(r_constr);
         let first_cross_step_row = self.uniform_r1cs.num_rows;

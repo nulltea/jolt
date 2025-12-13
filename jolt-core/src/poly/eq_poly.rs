@@ -1,3 +1,5 @@
+use std::ops::Range;
+
 use crate::field::JoltField;
 use rayon::prelude::*;
 
@@ -36,6 +38,12 @@ impl<F: JoltField> EqPolynomial<F> {
         evals
             .drain(worker_idx * chunk_size..(worker_idx + 1) * chunk_size)
             .collect()
+    }
+
+    pub fn evals_range_worker(r: &[F], log_num_workers: usize, worker_idx: usize) -> Range<usize> {
+        let chunk_size = 1 << (r.len() - log_num_workers);
+
+        worker_idx * chunk_size..(worker_idx + 1) * chunk_size
     }
 
     #[tracing::instrument(skip_all, name = "EqPolynomial::evals", level = "trace")]
@@ -231,6 +239,28 @@ impl<F: JoltField> EqPlusOnePolynomial<F> {
         }
 
         (eq_evals, eq_plus_one_evals)
+    }
+
+    #[tracing::instrument(skip_all, name = "EqPlusOnePolynomial::evals", level = "trace")]
+    pub fn evals_worker(
+        r: &[F],
+        scaling_factor: Option<F>,
+        log_num_workers: usize,
+        worker_idx: usize,
+    ) -> (Vec<F>, Vec<F>) {
+        let (mut eq_evals, mut eq_plus_one_evals) = Self::evals(r, scaling_factor);
+        if log_num_workers == 0 {
+            return (eq_evals, eq_plus_one_evals);
+        }
+
+        let chunk_size = 1 << (r.len() - log_num_workers);
+        let eq_evals_worker = eq_evals
+            .drain(worker_idx * chunk_size..(worker_idx + 1) * chunk_size)
+            .collect();
+        let eq_plus_one_evals_worker = eq_plus_one_evals
+            .drain(worker_idx * chunk_size..(worker_idx + 1) * chunk_size)
+            .collect();
+        (eq_evals_worker, eq_plus_one_evals_worker)
     }
 }
 

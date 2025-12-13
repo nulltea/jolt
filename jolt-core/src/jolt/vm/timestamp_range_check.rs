@@ -910,7 +910,7 @@ where
         Ok(())
     }
 
-    fn protocol_name() -> &'static [u8] {
+    pub fn protocol_name() -> &'static [u8] {
         b"Timestamp Validity Proof"
     }
 }

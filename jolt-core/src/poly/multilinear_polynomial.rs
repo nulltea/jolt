@@ -58,11 +58,11 @@ impl<F: JoltField> MultilinearPolynomial<F> {
     pub fn full_len(&self) -> usize {
         match self {
             MultilinearPolynomial::LargeScalars(poly) => poly.Z.len(),
-            MultilinearPolynomial::U8Scalars(poly) => poly.coeffs.len(),
-            MultilinearPolynomial::U16Scalars(poly) => poly.coeffs.len(),
-            MultilinearPolynomial::U32Scalars(poly) => poly.coeffs.len(),
-            MultilinearPolynomial::U64Scalars(poly) => poly.coeffs.len(),
-            MultilinearPolynomial::I64Scalars(poly) => poly.coeffs.len(),
+            MultilinearPolynomial::U8Scalars(poly) => poly.full_len(),
+            MultilinearPolynomial::U16Scalars(poly) => poly.full_len(),
+            MultilinearPolynomial::U32Scalars(poly) => poly.full_len(),
+            MultilinearPolynomial::U64Scalars(poly) => poly.full_len(),
+            MultilinearPolynomial::I64Scalars(poly) => poly.full_len(),
         }
     }
 
@@ -346,19 +346,19 @@ impl<F: JoltField> MultilinearPolynomial<F> {
         match self {
             MultilinearPolynomial::LargeScalars(poly) => poly.Z[index] * scaling_factor,
             MultilinearPolynomial::U8Scalars(poly) => {
-                poly.coeffs[index].field_mul(scaling_factor_r2_adjusted)
+                poly.coeffs[poly.chunk_range().0 + index].field_mul(scaling_factor_r2_adjusted)
             }
             MultilinearPolynomial::U16Scalars(poly) => {
-                poly.coeffs[index].field_mul(scaling_factor_r2_adjusted)
+                poly.coeffs[poly.chunk_range().0 + index].field_mul(scaling_factor_r2_adjusted)
             }
             MultilinearPolynomial::U32Scalars(poly) => {
-                poly.coeffs[index].field_mul(scaling_factor_r2_adjusted)
+                poly.coeffs[poly.chunk_range().0 + index].field_mul(scaling_factor_r2_adjusted)
             }
             MultilinearPolynomial::U64Scalars(poly) => {
-                poly.coeffs[index].field_mul(scaling_factor_r2_adjusted)
+                poly.coeffs[poly.chunk_range().0 + index].field_mul(scaling_factor_r2_adjusted)
             }
             MultilinearPolynomial::I64Scalars(poly) => {
-                poly.coeffs[index].field_mul(scaling_factor_r2_adjusted)
+                poly.coeffs[poly.chunk_range().0 + index].field_mul(scaling_factor_r2_adjusted)
             }
         }
     }
@@ -370,25 +370,25 @@ impl<F: JoltField> MultilinearPolynomial<F> {
         }
     }
 
-    pub fn into_distributed_commit_form(&self, len: usize) -> Self {
+    pub fn into_distributed_commit_form(&self) -> Self {
         match self {
             MultilinearPolynomial::LargeScalars(poly) => {
                 MultilinearPolynomial::LargeScalars(poly.clone())
             }
             MultilinearPolynomial::U8Scalars(poly) => {
-                MultilinearPolynomial::from(poly.into_distributed_commit_form(len))
+                MultilinearPolynomial::from(poly.into_distributed_commit_form())
             }
             MultilinearPolynomial::U16Scalars(poly) => {
-                MultilinearPolynomial::from(poly.into_distributed_commit_form(len))
+                MultilinearPolynomial::from(poly.into_distributed_commit_form())
             }
             MultilinearPolynomial::U32Scalars(poly) => {
-                MultilinearPolynomial::from(poly.into_distributed_commit_form(len))
+                MultilinearPolynomial::from(poly.into_distributed_commit_form())
             }
             MultilinearPolynomial::U64Scalars(poly) => {
-                MultilinearPolynomial::from(poly.into_distributed_commit_form(len))
+                MultilinearPolynomial::from(poly.into_distributed_commit_form())
             }
             MultilinearPolynomial::I64Scalars(poly) => {
-                MultilinearPolynomial::from(poly.into_distributed_commit_form(len))
+                MultilinearPolynomial::from(poly.into_distributed_commit_form())
             }
         }
     }

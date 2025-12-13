@@ -63,8 +63,8 @@ impl<F: JoltField> GruenSplitEqPolynomial<F> {
         let base = Self::new(w);
 
         // Chunk helper: for each level of E_out_vec, take this worker's slice
-        let E_in_vec = base
-            .E_in_vec
+        let E_out_vec = base
+            .E_out_vec
             .into_iter()
             .map(|level| {
                 let rows = level.len();
@@ -80,8 +80,8 @@ impl<F: JoltField> GruenSplitEqPolynomial<F> {
             current_index: base.current_index,
             current_scalar: base.current_scalar,
             w: base.w,
-            E_in_vec,
-            E_out_vec: base.E_out_vec,
+            E_out_vec,
+            E_in_vec: base.E_in_vec,
         }
     }
 

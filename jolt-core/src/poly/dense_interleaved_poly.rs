@@ -349,7 +349,6 @@ impl<F: JoltField, ProofTranscript: Transcript> BatchedCubicSumcheck<F, ProofTra
     }
 
     fn final_claims(&self) -> (F, F) {
-        tracing::trace!("final_claims len {}", self.len());
         assert_eq!(self.len(), 2);
         let left_claim = self.coeffs[0];
         let right_claim = self.coeffs[1];
