@@ -12,7 +12,8 @@ use rayon::prelude::*;
 
 use common::{
     constants::{
-        DEFAULT_MAX_INPUT_SIZE, DEFAULT_MAX_OUTPUT_SIZE, DEFAULT_MEMORY_SIZE, DEFAULT_STACK_SIZE,
+        DEFAULT_MAX_INPUT_SIZE, DEFAULT_MAX_OUTPUT_SIZE, DEFAULT_MAX_UNTRUSTED_ADVICE_SIZE,
+        DEFAULT_MEMORY_SIZE, DEFAULT_STACK_SIZE,
     },
     rv_trace::JoltDevice,
 };
@@ -48,6 +49,7 @@ pub struct Program {
     memory_size: u64,
     stack_size: u64,
     max_input_size: u64,
+    max_untrusted_advice_size: u64,
     max_output_size: u64,
     std: bool,
     pub elf: Option<PathBuf>,
@@ -61,6 +63,7 @@ impl Program {
             memory_size: DEFAULT_MEMORY_SIZE,
             stack_size: DEFAULT_STACK_SIZE,
             max_input_size: DEFAULT_MAX_INPUT_SIZE,
+            max_untrusted_advice_size: DEFAULT_MAX_UNTRUSTED_ADVICE_SIZE,
             max_output_size: DEFAULT_MAX_OUTPUT_SIZE,
             std: false,
             elf: None,
@@ -85,6 +88,10 @@ impl Program {
 
     pub fn set_max_input_size(&mut self, size: u64) {
         self.max_input_size = size;
+    }
+
+    pub fn set_max_untrusted_advice_size(&mut self, size: u64) {
+        self.max_untrusted_advice_size = size;
     }
 
     pub fn set_max_output_size(&mut self, size: u64) {
@@ -186,6 +193,7 @@ impl Program {
         let memory_config = common::rv_trace::MemoryConfig {
             memory_size: self.memory_size,
             stack_size: self.stack_size,
+            max_untrusted_advice_size: self.max_untrusted_advice_size,
             max_input_size: self.max_input_size,
             max_output_size: self.max_output_size,
         };
@@ -233,6 +241,7 @@ impl Program {
         let memory_config = common::rv_trace::MemoryConfig {
             memory_size: self.memory_size,
             stack_size: self.stack_size,
+            max_untrusted_advice_size: self.max_untrusted_advice_size,
             max_input_size: self.max_input_size,
             max_output_size: self.max_output_size,
         };

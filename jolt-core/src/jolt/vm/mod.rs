@@ -453,6 +453,38 @@ where
         }
     }
 
+    fn commit_untrusted_advice(
+        preprocessing: &JoltVerifierPreprocessing<C, F, PCS, ProofTranscript>,
+        program_io: &JoltDevice,
+    ) -> Option<(MultilinearPolynomial<F>, PCS::Commitment)>
+    where
+        PCS: CommitmentScheme<ProofTranscript, Field = F>,
+        ProofTranscript: Transcript,
+    {
+        if program_io.untrusted_advice.is_empty() {
+            return None;
+        }
+
+        let mut initial_memory_state =
+            vec![0; program_io.memory_layout.max_untrusted_advice_size as usize / 8];
+
+        let mut index = 1;
+        for chunk in program_io.untrusted_advice.chunks(8) {
+            let mut word = [0u8; 8];
+            for (i, byte) in chunk.iter().enumerate() {
+                word[i] = *byte;
+            }
+            let word = u64::from_le_bytes(word);
+            initial_memory_state[index] = word;
+            index += 1;
+        }
+
+        let poly = MultilinearPolynomial::from(initial_memory_state);
+        let commitment = PCS::commit(&poly, &preprocessing.generators);
+
+        Some((poly, commitment))
+    }
+
     #[tracing::instrument(skip_all, name = "Jolt::prove")]
     fn prove(
         program_io: JoltDevice,
@@ -567,6 +599,9 @@ where
 
         let jolt_commitments =
             jolt_polynomials.commit::<C, PCS, ProofTranscript>(&preprocessing.shared);
+
+        let (untrusted_advice_poly, untrusted_advice_commitment) =
+            Self::commit_untrusted_advice(&preprocessing.shared, &program_io).unzip();
 
         transcript.append_scalar(&spartan_key.vk_digest);
 
@@ -815,6 +850,7 @@ where
         preprocessing.program_io = Some(JoltDevice {
             inputs: program_io.inputs,
             outputs: program_io.outputs,
+            untrusted_advice: vec![],
             panic: program_io.panic,
             memory_layout: memory_layout.clone(),
         });

@@ -15,6 +15,7 @@ pub struct Attributes {
     pub stack_size: u64,
     pub max_input_size: u64,
     pub max_output_size: u64,
+    pub max_untrusted_advice_size: u64,
     pub max_bytecode_size: u64,
     pub max_trace_length: u64,
     pub guest_only: bool,
@@ -22,6 +23,8 @@ pub struct Attributes {
 
 #[cfg(feature = "std")]
 pub fn parse_attributes(attr: &Vec<NestedMeta>) -> Attributes {
+    use crate::constants::DEFAULT_MAX_UNTRUSTED_ADVICE_SIZE;
+
     let mut attributes = HashMap::<_, u64>::new();
     let mut wasm = false;
     let mut guest_only = false;
@@ -67,6 +70,9 @@ pub fn parse_attributes(attr: &Vec<NestedMeta>) -> Attributes {
     let max_bytecode_size = *attributes
         .get("max_bytecode_size")
         .unwrap_or(&DEFAULT_MAX_BYTECODE_SIZE);
+    let max_untrusted_advice_size = *attributes
+        .get("max_untrusted_advice_size")
+        .unwrap_or(&DEFAULT_MAX_UNTRUSTED_ADVICE_SIZE);
     let max_trace_length = *attributes
         .get("max_trace_length")
         .unwrap_or(&DEFAULT_MAX_TRACE_LENGTH);
@@ -77,6 +83,7 @@ pub fn parse_attributes(attr: &Vec<NestedMeta>) -> Attributes {
         stack_size,
         max_input_size,
         max_output_size,
+        max_untrusted_advice_size,
         max_bytecode_size,
         max_trace_length,
         guest_only,

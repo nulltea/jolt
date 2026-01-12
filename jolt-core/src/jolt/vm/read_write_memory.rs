@@ -7,6 +7,7 @@ use crate::poly::compact_polynomial::{CompactPolynomial, SmallScalar};
 use crate::poly::multilinear_polynomial::{MultilinearPolynomial, PolynomialEvaluation};
 use crate::poly::opening_proof::{ProverOpeningAccumulator, VerifierOpeningAccumulator};
 use crate::subprotocols::grand_product::BatchedDenseGrandProduct;
+use crate::subprotocols::grand_product::BatchedGrandProduct;
 use crate::utils::thread::unsafe_allocate_zero_vec;
 use itertools::Itertools;
 use rayon::prelude::*;
@@ -87,11 +88,11 @@ impl ReadWriteMemoryPreprocessing {
 }
 
 pub fn memory_address_to_witness_index(address: u64, memory_layout: &MemoryLayout) -> usize {
-    (REGISTER_COUNT + (address - memory_layout.input_start) / 4) as usize
+    (REGISTER_COUNT + (address - memory_layout.untrusted_advice_start) / 4) as usize
 }
 
 pub fn remap_address(a: u64, memory_layout: &MemoryLayout) -> u64 {
-    if a >= memory_layout.input_start {
+    if a >= memory_layout.untrusted_advice_start {
         memory_address_to_witness_index(a, memory_layout) as u64
     } else if a < REGISTER_COUNT {
         // If a < REGISTER_COUNT, it is one of the registers and doesn't
@@ -136,6 +137,8 @@ pub struct ReadWriteMemoryStuff<T: CanonicalSerialize + CanonicalDeserialize> {
     pub t_read_ram: T,
     /// Final timestamps.
     pub t_final: T,
+
+    pub v_advice: T,
 
     pub a_init_final: VerifierComputedOpening<T>,
     /// Initial memory values. RAM is initialized to contain the program bytecode and inputs.
@@ -286,9 +289,18 @@ impl<F: JoltField> ReadWriteMemoryPolynomials<F> {
         }
         // Copy input bytes
         v_init_index = memory_address_to_witness_index(
-            program_io.memory_layout.input_start,
+            program_io.memory_layout.untrusted_advice_start,
             &program_io.memory_layout,
         );
+        for chunk in program_io.untrusted_advice.chunks(4) {
+            let mut word = [0u8; 4];
+            for (i, byte) in chunk.iter().enumerate() {
+                word[i] = *byte;
+            }
+            let word = u32::from_le_bytes(word);
+            v_init[v_init_index] = word;
+            v_init_index += 1;
+        }
         // Convert input bytes into words and populate `v_init`
         for chunk in program_io.inputs.chunks(4) {
             let mut word = [0u8; 4];
@@ -491,6 +503,7 @@ impl<F: JoltField> ReadWriteMemoryPolynomials<F> {
             t_final,
             v_init: Some(v_init),
             a_init_final: None,
+            v_advice: todo!(),
             identity: None,
         }
     }
@@ -713,6 +726,135 @@ where
     PCS: CommitmentScheme<ProofTranscript, Field = F>,
     ProofTranscript: Transcript,
 {
+    fn verify_memory_checking(
+        preprocessing: &Self::Preprocessing,
+        pcs_setup: &PCS::Setup,
+        mut proof: MemoryCheckingProof<
+            F,
+            PCS,
+            Self::Openings,
+            Self::ExogenousOpenings,
+            ProofTranscript,
+        >,
+        commitments: &Self::Commitments,
+        jolt_commitments: &JoltCommitments<PCS, ProofTranscript>,
+        opening_accumulator: &mut VerifierOpeningAccumulator<F, PCS, ProofTranscript>,
+        transcript: &mut ProofTranscript,
+    ) -> Result<(), ProofVerifyError> {
+        // Fiat-Shamir randomness for multiset hashes
+        let gamma: F = transcript.challenge_scalar();
+        let tau: F = transcript.challenge_scalar();
+
+        let protocol_name = Self::protocol_name();
+        transcript.append_message(protocol_name);
+
+        Self::check_multiset_equality(preprocessing, &proof.multiset_hashes);
+        proof.multiset_hashes.append_to_transcript(transcript);
+
+        let (read_write_hashes, init_final_hashes) = Self::interleave(
+            preprocessing,
+            &proof.multiset_hashes.read_hashes,
+            &proof.multiset_hashes.write_hashes,
+            &proof.multiset_hashes.init_hashes,
+            &proof.multiset_hashes.final_hashes,
+        );
+
+        let read_write_batch_size = read_write_hashes.len();
+        let (read_write_claim, r_read_write) = Self::ReadWriteGrandProduct::verify_grand_product(
+            &proof.read_write_grand_product,
+            &read_write_hashes,
+            Some(opening_accumulator),
+            transcript,
+            Some(pcs_setup),
+        );
+        // For a batch size of k, the first log2(k) elements of `r_read_write`/`r_init_final`
+        // form the point at which the output layer's MLE is evaluated. The remaining elements
+        // then form the point at which the leaf layer's polynomials are evaluated.
+        let (r_read_write_batch_index, r_read_write_opening) =
+            r_read_write.split_at(read_write_batch_size.next_power_of_two().log_2());
+
+        let init_final_batch_size = init_final_hashes.len();
+        let (init_final_claim, r_init_final) = Self::InitFinalGrandProduct::verify_grand_product(
+            &proof.init_final_grand_product,
+            &init_final_hashes,
+            Some(opening_accumulator),
+            transcript,
+            Some(pcs_setup),
+        );
+        let (r_init_final_batch_index, r_init_final_opening) =
+            r_init_final.split_at(init_final_batch_size.next_power_of_two().log_2());
+
+        let read_write_commits: Vec<_> = [
+            commitments.read_write_values_grand_product(),
+            Self::ExogenousOpenings::exogenous_data(jolt_commitments),
+        ]
+        .concat();
+        let read_write_claims: Vec<_> = [
+            proof.openings.read_write_values_grand_product(),
+            proof.exogenous_openings.openings(),
+        ]
+        .concat();
+
+        opening_accumulator.append(
+            &read_write_commits,
+            r_read_write_opening.to_vec(),
+            &read_write_claims,
+            transcript,
+        );
+
+        opening_accumulator.append(
+            &commitments.init_final_values(),
+            r_init_final_opening.to_vec(),
+            &proof.openings.init_final_values(),
+            transcript,
+        );
+        // let advice_vars = ((preprocessing
+        //     .program_io
+        //     .as_ref()
+        //     .unwrap()
+        //     .memory_layout
+        //     .max_untrusted_advice_size
+        //     / 4)
+        // .next_power_of_two() as usize)
+        //     .log_2();
+        // let bytecode_vars = preprocessing
+        //     .bytecode_words
+        //     .len()
+        //     .next_power_of_two()
+        //     .log_2();
+        // let r_advice_opening =
+        //     &r_init_final_opening[r_init_final_opening.len() - advice_vars - bytecode_vars
+        //         ..r_init_final_opening.len() - bytecode_vars];
+
+        // opening_accumulator.append(
+        //     &[&jolt_commitments.read_write_memory.v_advice],
+        //     r_advice_opening.to_vec(),
+        //     &proof.openings.init_final_values(),
+        //     transcript,
+        // );
+
+        Self::compute_verifier_openings(
+            &mut proof.openings,
+            preprocessing,
+            r_read_write_opening,
+            r_init_final_opening,
+        );
+
+        Self::check_fingerprints(
+            preprocessing,
+            read_write_claim,
+            init_final_claim,
+            r_read_write_batch_index,
+            r_init_final_batch_index,
+            &proof.openings,
+            &proof.exogenous_openings,
+            &gamma,
+            &tau,
+        );
+
+        Ok(())
+    }
+
     fn compute_verifier_openings(
         openings: &mut Self::Openings,
         preprocessing: &Self::Preprocessing,
@@ -842,6 +984,7 @@ where
     pub sumcheck_proof: SumcheckInstanceProof<F, ProofTranscript>,
     /// Opening of v_final at the random point chosen over the course of sumcheck
     pub opening: F,
+    pub advice_opening: F,
 }
 
 impl<F, PCS, ProofTranscript> OutputSumcheckProof<F, PCS, ProofTranscript>
@@ -953,6 +1096,7 @@ where
             num_rounds,
             sumcheck_proof,
             opening: sumcheck_openings[2], // only need v_final; verifier computes the rest on its own
+            advice_opening: todo!(),
             _pcs: PhantomData,
         }
     }
@@ -1051,10 +1195,21 @@ where
             "Output sumcheck check failed."
         );
 
+        let max_advice_size = program_io.memory_layout.max_untrusted_advice_size;
+        let advice_vars = ((max_advice_size / 4).next_power_of_two() as usize).log_2();
+        let r_advice = r_sumcheck[..advice_vars].to_vec();
+
         opening_accumulator.append(
             &[&commitment.v_final],
             r_sumcheck,
             &[&proof.opening],
+            transcript,
+        );
+
+        opening_accumulator.append(
+            &[&commitment.v_advice],
+            r_advice,
+            &[&proof.advice_opening],
             transcript,
         );
 

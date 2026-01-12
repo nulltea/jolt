@@ -403,6 +403,7 @@ impl MacroBuilder {
         let memory_layout = MemoryLayout::new(&MemoryConfig {
             max_input_size: attributes.max_input_size,
             max_output_size: attributes.max_output_size,
+            max_untrusted_advice_size: attributes.max_untrusted_advice_size,
             stack_size: attributes.stack_size,
             memory_size: attributes.memory_size,
         });
