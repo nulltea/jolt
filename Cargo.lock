@@ -1989,6 +1989,7 @@ dependencies = [
  "jolt-core",
  "jolt-sdk-macros",
  "postcard",
+ "serde",
  "tracer",
 ]
 
