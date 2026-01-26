@@ -197,7 +197,7 @@ impl Program {
             max_input_size: self.max_input_size,
             max_output_size: self.max_output_size,
         };
-        let (raw_trace, io_device) = tracer::trace(elf_contents, inputs, &memory_config);
+        let (raw_trace, io_device) = tracer::trace(elf_contents, inputs, &[], &memory_config);
         println!("raw_trace: {:?}", raw_trace.len());
         let trace: Vec<_> = raw_trace
             .into_par_iter()
@@ -245,7 +245,7 @@ impl Program {
             max_input_size: self.max_input_size,
             max_output_size: self.max_output_size,
         };
-        let (raw_trace, _) = tracer::trace(elf_contents, inputs, &memory_config);
+        let (raw_trace, _) = tracer::trace(elf_contents, inputs, &[], &memory_config);
 
         let (bytecode, memory_init) = self.decode();
         let (io_device, processed_trace) = self.trace(inputs);

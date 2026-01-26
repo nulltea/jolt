@@ -42,6 +42,9 @@ pub fn parse_attributes(attr: &Vec<NestedMeta>) -> Attributes {
                     "stack_size" => attributes.insert("stack_size", value),
                     "max_input_size" => attributes.insert("max_input_size", value),
                     "max_output_size" => attributes.insert("max_output_size", value),
+                    "max_untrusted_advice_size" => {
+                        attributes.insert("max_untrusted_advice_size", value)
+                    }
                     "max_bytecode_size" => attributes.insert("max_bytecode_size", value),
                     "max_trace_length" => attributes.insert("max_trace_length", value),
                     _ => panic!("invalid attribute"),

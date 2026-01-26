@@ -31,6 +31,7 @@ pub use common::rv_trace::{
 pub fn trace(
     elf_contents: Vec<u8>,
     inputs: &[u8],
+    untrusted_advice: &[u8],
     memory_config: &MemoryConfig,
 ) -> (Vec<RVTraceRow>, JoltDevice) {
     let term = DefaultTerminal::default();
@@ -39,6 +40,7 @@ pub fn trace(
 
     let mut jolt_device = JoltDevice::new(memory_config);
     jolt_device.inputs = inputs.to_vec();
+    jolt_device.untrusted_advice = untrusted_advice.to_vec();
     emulator.get_mut_cpu().get_mut_mmu().jolt_device = jolt_device;
 
     emulator.setup_program(elf_contents);
