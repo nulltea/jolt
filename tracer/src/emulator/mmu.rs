@@ -284,6 +284,7 @@ impl Mmu {
             } else {
                 // loads also from input
                 self.jolt_device.is_input(ea)
+                    || self.jolt_device.is_untrusted_advice(ea)
                     || self.jolt_device.is_output(ea)
                     || self.jolt_device.is_panic(ea)
                     || self.jolt_device.is_termination(ea)
@@ -578,7 +579,9 @@ impl Mmu {
                 0x10000000..=0x100000ff => self.uart.load(effective_address),
                 0x10001000..=0x10001FFF => self.disk.load(effective_address),
                 _ => {
-                    if self.jolt_device.is_input(effective_address) {
+                    if self.jolt_device.is_input(effective_address)
+                        || self.jolt_device.is_untrusted_advice(effective_address)
+                    {
                         self.jolt_device.load(effective_address)
                     } else {
                         panic!("Load Failed: Unknown memory mapping {effective_address:X}.");
@@ -597,7 +600,9 @@ impl Mmu {
             Xlen::Bit64 => 8,
         };
         if word_address < DRAM_BASE {
-            if self.jolt_device.is_input(word_address) {
+            if self.jolt_device.is_input(word_address)
+                || self.jolt_device.is_untrusted_advice(word_address)
+            {
                 let mut value_bytes = [0u8; 8];
                 for i in 0..bytes {
                     value_bytes[i as usize] = self.jolt_device.load(word_address + i);

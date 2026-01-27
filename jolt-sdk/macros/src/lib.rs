@@ -432,8 +432,10 @@ impl MacroBuilder {
         });
         let input_start = memory_layout.input_start;
         let output_start = memory_layout.output_start;
+        let untrusted_advice_start = memory_layout.untrusted_advice_start;
         let max_input_len = attributes.max_input_size as usize;
         let max_output_len = attributes.max_output_size as usize;
+        let max_untrusted_advice_len = attributes.max_untrusted_advice_size as usize;
         let termination_bit = memory_layout.termination as usize;
 
         let get_input_slice = quote! {
@@ -443,11 +445,24 @@ impl MacroBuilder {
             };
         };
 
-        let args = &self.pub_func_args;
-        let args_fetch = args.iter().map(|(name, ty)| {
+        let get_untrusted_advice_slice = quote! {
+            let untrusted_advice_ptr = #untrusted_advice_start as *const u8;
+            let untrusted_advice_slice = unsafe {
+                core::slice::from_raw_parts(untrusted_advice_ptr, #max_untrusted_advice_len)
+            };
+        };
+
+        let pub_args_fetch = self.pub_func_args.iter().map(|(name, ty)| {
             quote! {
                 let (#name, input_slice) =
                     jolt::postcard::take_from_bytes::<#ty>(input_slice).unwrap();
+            }
+        });
+
+        let untrusted_advice_args_fetch = self.untrusted_func_args.iter().map(|(name, ty)| {
+            quote! {
+                let (#name, untrusted_advice_slice) =
+                    jolt::postcard::take_from_bytes::<#ty>(untrusted_advice_slice).unwrap();
             }
         });
 
@@ -493,7 +508,9 @@ impl MacroBuilder {
             pub extern "C" fn main() {
                 let mut offset = 0;
                 #get_input_slice
-                #(#args_fetch;)*
+                #get_untrusted_advice_slice
+                #(#pub_args_fetch;)*
+                #(#untrusted_advice_args_fetch;)*
                 #check_input_len
                 #block
                 #handle_return
