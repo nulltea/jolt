@@ -653,6 +653,16 @@ pub struct JoltDevice {
     pub memory_layout: MemoryLayout,
 }
 
+#[derive(
+    Debug, Clone, PartialEq, Serialize, Deserialize, CanonicalSerialize, CanonicalDeserialize,
+)]
+pub struct VerifierProgramIO {
+    pub inputs: Vec<u8>,
+    pub outputs: Vec<u8>,
+    pub panic: bool,
+    pub memory_layout: MemoryLayout,
+}
+
 impl JoltDevice {
     pub fn new(memory_config: &MemoryConfig) -> Self {
         Self {
@@ -662,6 +672,15 @@ impl JoltDevice {
             outputs: Vec::new(),
             panic: false,
             memory_layout: MemoryLayout::new(memory_config),
+        }
+    }
+
+    pub fn into_verifier_io(&self) -> VerifierProgramIO {
+        VerifierProgramIO {
+            inputs: self.inputs.clone(),
+            outputs: self.outputs.clone(),
+            panic: self.panic,
+            memory_layout: self.memory_layout.clone(),
         }
     }
 
@@ -677,13 +696,6 @@ impl JoltDevice {
             } else {
                 self.inputs[internal_address]
             }
-        // } else if self.is_trusted_advice(address) {
-        //     let internal_address = self.convert_trusted_advice_read_address(address);
-        //     if self.trusted_advice.len() <= internal_address {
-        //         0
-        //     } else {
-        //         self.trusted_advice[internal_address]
-        //     }
         } else if self.is_untrusted_advice(address) {
             let internal_address = self.convert_untrusted_advice_read_address(address);
             if self.untrusted_advice.len() <= internal_address {
@@ -894,12 +906,11 @@ impl MemoryLayout {
             }
         } // Must be 8-byte aligned
 
-        // let max_trusted_advice_size = align_up(config.max_trusted_advice_size, 8);
-        let max_untrusted_advice_size = align_up(config.max_untrusted_advice_size, 8);
-        let max_input_size = align_up(config.max_input_size, 8);
-        let max_output_size = align_up(config.max_output_size, 8);
-        let stack_size = align_up(config.stack_size, 8);
-        let memory_size = align_up(config.memory_size, 8);
+        let max_untrusted_advice_size = align_up(config.max_untrusted_advice_size, 4);
+        let max_input_size = align_up(config.max_input_size, 4);
+        let max_output_size = align_up(config.max_output_size, 4);
+        let stack_size = align_up(config.stack_size, 4);
+        let memory_size = align_up(config.memory_size, 4);
 
         // Adds 16 to account for panic bit and termination bit
         // (they each occupy one full 8-byte word)
@@ -907,16 +918,19 @@ impl MemoryLayout {
             .checked_add(max_untrusted_advice_size)
             // .and_then(|s| s.checked_add(max_untrusted_advice_size))
             .and_then(|s| s.checked_add(max_output_size))
-            .and_then(|s| s.checked_add(16))
+            .and_then(|s| s.checked_add(8))
             .expect("I/O region size overflow");
 
         // Padded so that the witness index corresponding to `input_start`
         // has the form 0b11...100...0
-        let io_region_words = (io_region_bytes / 8).next_power_of_two();
+        let io_region_words = (REGISTER_COUNT + io_region_bytes / 4)
+            .next_power_of_two()
+            .checked_sub(REGISTER_COUNT)
+            .expect("I/O region words underflow");
         // let io_region_words = (io_region_bytes / 8 + 1).next_power_of_two() - 1;
 
         let io_bytes = io_region_words
-            .checked_mul(8)
+            .checked_mul(4)
             .expect("I/O region byte count overflow");
 
         // let trusted_advice_start = RAM_START_ADDRESS

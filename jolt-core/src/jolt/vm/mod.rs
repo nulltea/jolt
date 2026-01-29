@@ -847,13 +847,7 @@ where
         assert!(program_io.inputs.len() <= memory_layout.max_input_size as usize);
         assert!(program_io.outputs.len() <= memory_layout.max_output_size as usize);
         // pair the memory layout with the program io from the proof
-        preprocessing.program_io = Some(JoltDevice {
-            inputs: program_io.inputs,
-            outputs: program_io.outputs,
-            untrusted_advice: vec![],
-            panic: program_io.panic,
-            memory_layout: memory_layout.clone(),
-        });
+        preprocessing.program_io = Some(program_io.into_verifier_io());
 
         ReadWriteMemoryProof::verify(
             proof,

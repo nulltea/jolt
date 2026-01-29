@@ -31,7 +31,7 @@ use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use common::constants::{
     BYTES_PER_INSTRUCTION, MEMORY_OPS_PER_INSTRUCTION, RAM_START_ADDRESS, REGISTER_COUNT,
 };
-use common::rv_trace::{JoltDevice, MemoryLayout, MemoryOp};
+use common::rv_trace::{JoltDevice, MemoryLayout, MemoryOp, VerifierProgramIO};
 
 use super::{timestamp_range_check::TimestampValidityProof, JoltCommitments};
 use super::{JoltPolynomials, JoltStuff, JoltTraceStep};
@@ -45,7 +45,7 @@ pub struct ReadWriteMemoryPreprocessing {
     // Having `program_io` in this preprocessing struct allows the verifier to access it
     // to compute the v_init and v_final openings, with no impact
     // on existing function signatures.
-    pub program_io: Option<JoltDevice>,
+    pub program_io: Option<VerifierProgramIO>,
 }
 
 impl ReadWriteMemoryPreprocessing {
