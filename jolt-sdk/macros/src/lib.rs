@@ -641,6 +641,11 @@ impl MacroBuilder {
             program.set_max_input_size(#value);
         });
 
+        let value = attributes.max_untrusted_advice_size;
+        code.push(quote! {
+            program.set_max_untrusted_advice_size(#value);
+        });
+
         let value = attributes.max_output_size;
         code.push(quote! {
             program.set_max_output_size(#value);

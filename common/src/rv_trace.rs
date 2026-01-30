@@ -916,7 +916,6 @@ impl MemoryLayout {
         // (they each occupy one full 8-byte word)
         let io_region_bytes = max_input_size
             .checked_add(max_untrusted_advice_size)
-            // .and_then(|s| s.checked_add(max_untrusted_advice_size))
             .and_then(|s| s.checked_add(max_output_size))
             .and_then(|s| s.checked_add(8))
             .expect("I/O region size overflow");

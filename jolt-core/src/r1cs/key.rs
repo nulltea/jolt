@@ -111,7 +111,7 @@ impl<F: JoltField> CrossStepR1CS<F> {
     }
 
     /// Unpadded number of cross-step constraints.
-    fn num_constraints(&self) -> usize {
+    pub fn num_constraints(&self) -> usize {
         self.constraints.len()
     }
 }

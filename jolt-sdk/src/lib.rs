@@ -19,16 +19,12 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Serialize, Deserialize)]
 #[repr(transparent)]
 pub struct UntrustedAdvice<T> {
-    value: T,
+    pub value: T,
 }
 
 impl<T> UntrustedAdvice<T> {
     pub fn new(value: T) -> Self {
         Self { value }
-    }
-
-    pub fn unwrap(self) -> T {
-        self.value
     }
 }
 
