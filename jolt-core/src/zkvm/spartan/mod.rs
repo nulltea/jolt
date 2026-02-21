@@ -5,7 +5,6 @@ use crate::field::JoltField;
 use crate::poly::commitment::commitment_scheme::CommitmentScheme;
 use crate::poly::eq_poly::EqPolynomial;
 use crate::poly::opening_proof::{OpeningPoint, SumcheckId};
-use crate::poly::spartan_interleaved_poly::NUM_SVO_ROUNDS;
 #[cfg(feature = "allocative")]
 use crate::utils::profiling::print_data_structure_heap_usage;
 use crate::zkvm::dag::stage::SumcheckStages;
@@ -69,7 +68,7 @@ where
 
         let transcript = &mut *state_manager.transcript.borrow_mut();
         let (outer_sumcheck_proof, outer_sumcheck_r, outer_sumcheck_claims) =
-            SumcheckInstanceProof::<F, ProofTranscript>::prove_spartan_small_value::<NUM_SVO_ROUNDS>(
+            SumcheckInstanceProof::<F, ProofTranscript>::prove_spartan_no_svo(
                 &preprocessing.shared,
                 trace,
                 num_rounds_x,

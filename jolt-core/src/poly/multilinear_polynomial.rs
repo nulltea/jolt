@@ -504,7 +504,7 @@ impl<'a, F: JoltField> TryFrom<&'a MultilinearPolynomial<F>> for &'a CompactPoly
     }
 }
 
-pub trait PolynomialBinding<F: JoltField> {
+pub trait PolynomialBinding<F: JoltField, Coeff = F> {
     /// Returns whether or not the polynomial has been bound (in a sumcheck)
     fn is_bound(&self) -> bool;
     /// Binds the polynomial to a random field element `r`.
@@ -513,14 +513,14 @@ pub trait PolynomialBinding<F: JoltField> {
     /// by coefficient.
     fn bind_parallel(&mut self, r: F::Challenge, order: BindingOrder);
     /// Returns the final sumcheck claim about the polynomial.
-    fn final_sumcheck_claim(&self) -> F;
+    fn final_sumcheck_claim(&self) -> Coeff;
 }
 
-pub trait PolynomialEvaluation<F: JoltField> {
+pub trait PolynomialEvaluation<F: JoltField, Output = F> {
     /// Returns the final sumcheck claim about the polynomial.
     /// This uses the algorithm in Lemma 4.3 in Thaler, Proofs and
     /// Arguments -- the point at which we evaluate the polynomial
-    fn evaluate<C>(&self, r: &[C]) -> F
+    fn evaluate<C>(&self, r: &[C]) -> Output
     where
         C: Copy + Send + Sync + Into<F> + ChallengeFieldOps<F>,
         F: FieldChallengeOps<C>;
@@ -536,7 +536,7 @@ pub trait PolynomialEvaluation<F: JoltField> {
         F: FieldChallengeOps<C>;
     /// Computes this polynomial's contribution to the computation of a prover
     /// sumcheck message (i.e. a univariate polynomial of the given `degree`).
-    fn sumcheck_evals(&self, index: usize, degree: usize, order: BindingOrder) -> Vec<F>;
+    fn sumcheck_evals(&self, index: usize, degree: usize, order: BindingOrder) -> Vec<Output>;
 }
 
 impl<F: JoltField> PolynomialBinding<F> for MultilinearPolynomial<F> {

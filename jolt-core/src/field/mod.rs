@@ -1,6 +1,7 @@
 use allocative::Allocative;
 use ark_ff::biginteger::S224;
-use ark_ff::UniformRand;
+use ark_ff::{BigInteger, UniformRand};
+use num::BigUint;
 use num_traits::{One, Zero};
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
@@ -104,6 +105,10 @@ pub trait JoltField:
     + Hash
     + MaybeAllocative
     + FieldChallengeOps<Self::Challenge>
+    // + Into<BigUint>
+    + From<BigUint>
+    + UniformRand
+    + From<u64>
 {
     /// Number of bytes occupied by a single field element.
     const NUM_BYTES: usize;
@@ -111,6 +116,11 @@ pub trait JoltField:
     const MONTGOMERY_R: Self;
     /// The squared Montgomery factor R^2 = 2^(128*N) mod p
     const MONTGOMERY_R_SQUARE: Self;
+
+    const MODULUS_BIT_SIZE: u32;
+
+    type BigInt: BigInteger;
+    const MODULUS: Self::BigInt;
 
     /// Unreduced field element representation with N 64 bit limbs
     type Unreduced<const N: usize>: Clone
@@ -268,6 +278,25 @@ pub trait JoltField:
     ///
     /// Need to specify the number of limbs in the Unreduced (at least 5, usually up to 7)
     fn from_barrett_reduce<const N: usize>(unreduced: Self::Unreduced<N>) -> Self;
+
+    fn double(&self) -> Self;
+
+    fn double_in_place(&mut self);
+
+    fn sqrt(&self) -> Option<Self>;
+
+    fn pow<S: AsRef<[u64]>>(&self, exp: S) -> Self;
+
+    /// Construct a prime field element from an integer in the range 0..(p - 1).
+    fn from_bigint(repr: Self::BigInt) -> Option<Self>;
+
+    /// Converts an element of the prime field into an integer in the range 0..(p - 1).
+    fn into_bigint(self) -> Self::BigInt;
+
+    /// Converts an element of the prime field into an integer in the range 0..(p - 1).
+    fn into_biguint(self) -> BigUint;
+
+    fn from_be_bytes_mod_order(bytes: &[u8]) -> Self;
 }
 
 pub trait MulU64WithCarry {

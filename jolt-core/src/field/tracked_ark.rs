@@ -34,11 +34,12 @@ use crate::utils::counters::{
 };
 use allocative::Allocative;
 use ark_bn254::Fr;
-use ark_ff::BigInt;
-use ark_ff::UniformRand;
+use ark_ff::{AdditiveGroup, BigInt};
 use ark_ff::{One, Zero};
+use ark_ff::{PrimeField, UniformRand};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_std::rand::Rng;
+use num::BigUint;
 use std::default::Default;
 use std::fmt;
 use std::iter::{Product, Sum};
@@ -320,6 +321,9 @@ impl JoltField for TrackedFr {
     const MONTGOMERY_R: Self = TrackedFr(<ark_bn254::Fr as JoltField>::MONTGOMERY_R);
     /// The squared Montgomery factor R^2 = 2^(128*N) mod p
     const MONTGOMERY_R_SQUARE: Self = TrackedFr(<ark_bn254::Fr as JoltField>::MONTGOMERY_R_SQUARE);
+
+    const MODULUS_BIT_SIZE: u32 = 256;
+
     type Unreduced<const N: usize> = <ark_bn254::Fr as JoltField>::Unreduced<N>;
     type SmallValueLookupTables = <ark_bn254::Fr as JoltField>::SmallValueLookupTables;
 
@@ -449,6 +453,46 @@ impl JoltField for TrackedFr {
         BARRETT_REDUCE_COUNT.fetch_add(1, Ordering::Relaxed);
         TrackedFr(<Fr as JoltField>::from_barrett_reduce(unreduced))
     }
+
+    fn double(&self) -> Self {
+        // TrackedFr(<Self as AdditiveGroup>::double(self))
+        todo!()
+    }
+
+    fn double_in_place(&mut self) {
+        // *self = TrackedFr(<Self as AdditiveGroup>::double_in_place(self.0));
+        todo!()
+    }
+
+    fn sqrt(&self) -> Option<Self> {
+        // <Self as PrimeField>::sqrt(self)
+        todo!()
+    }
+
+    fn pow<S: AsRef<[u64]>>(&self, exp: S) -> Self {
+        todo!()
+    }
+
+    /// Construct a prime field element from an integer in the range 0..(p - 1).
+    fn from_bigint(repr: Self::BigInt) -> Option<Self> {
+        todo!()
+    }
+
+    /// Converts an element of the prime field into an integer in the range 0..(p - 1).
+    fn into_bigint(self) -> Self::BigInt {
+        todo!()
+    }
+
+    fn into_biguint(self) -> BigUint {
+        todo!()
+    }
+
+    fn from_be_bytes_mod_order(bytes: &[u8]) -> Self {
+        todo!()
+    }
+
+    type BigInt = <Fr as PrimeField>::BigInt;
+    const MODULUS: Self::BigInt = <Fr as PrimeField>::MODULUS;
 }
 
 impl TrackedFr {
@@ -456,6 +500,24 @@ impl TrackedFr {
     pub fn mul_hi_bigint_u128(&self, n: [u64; 4]) -> Self {
         MUL_U128_COUNT.fetch_add(1, Ordering::Relaxed);
         TrackedFr(self.0.mul_hi_bigint_u128(n))
+    }
+}
+
+impl From<BigUint> for TrackedFr {
+    fn from(value: BigUint) -> Self {
+        TrackedFr(Fr::from(value))
+    }
+}
+
+impl From<TrackedFr> for BigUint {
+    fn from(value: TrackedFr) -> Self {
+        BigUint::from(value.0)
+    }
+}
+
+impl From<u64> for TrackedFr {
+    fn from(value: u64) -> Self {
+        TrackedFr(Fr::from(value))
     }
 }
 

@@ -4,7 +4,8 @@ use crate::field::challenge::Mont254BitChallenge;
 use crate::field::challenge::MontU128Challenge;
 use crate::field::MulTrunc;
 use crate::utils::thread::unsafe_allocate_zero_vec;
-use ark_ff::{prelude::*, BigInt, PrimeField, UniformRand};
+use ark_ff::{prelude::*, AdditiveGroup, BigInt, PrimeField, UniformRand};
+use num::BigUint;
 use rayon::prelude::*;
 
 impl FieldOps for ark_bn254::Fr {}
@@ -29,6 +30,9 @@ impl JoltField for ark_bn254::Fr {
         use ark_ff::MontConfig;
         std::mem::transmute(<ark_bn254::FrConfig as MontConfig<4>>::R2)
     };
+
+    const MODULUS_BIT_SIZE: u32 = 256;
+
     type Unreduced<const N: usize> = BigInt<N>;
     type SmallValueLookupTables = [Vec<Self>; 2];
 
@@ -262,6 +266,47 @@ impl JoltField for ark_bn254::Fr {
     fn from_barrett_reduce<const L: usize>(unreduced: BigInt<L>) -> Self {
         ark_bn254::Fr::from_barrett_reduce::<L, 5>(unreduced)
     }
+
+    fn double(&self) -> Self {
+        <Self as AdditiveGroup>::double(self)
+    }
+
+    fn double_in_place(&mut self) {
+        <Self as AdditiveGroup>::double_in_place(self);
+    }
+
+    fn sqrt(&self) -> Option<Self> {
+        // <Self as PrimeField>::sqrt(self)
+        todo!()
+    }
+
+    fn pow<S: AsRef<[u64]>>(&self, exp: S) -> Self {
+        <Self as Field>::pow(self, exp)
+    }
+
+    /// Construct a prime field element from an integer in the range 0..(p - 1).
+    fn from_bigint(repr: Self::BigInt) -> Option<Self> {
+        <Self as PrimeField>::from_bigint(repr)
+    }
+
+    /// Converts an element of the prime field into an integer in the range 0..(p - 1).
+    fn into_bigint(self) -> Self::BigInt {
+        <Self as PrimeField>::into_bigint(self)
+    }
+
+    /// Converts an element of the prime field into an integer in the range 0..(p - 1).
+    fn into_biguint(self) -> BigUint {
+        self.into()
+    }
+
+    fn from_be_bytes_mod_order(bytes: &[u8]) -> Self {
+        let mut bytes_copy = bytes.to_vec();
+        bytes_copy.reverse();
+        Self::from_le_bytes_mod_order(&bytes_copy)
+    }
+
+    type BigInt = <Self as PrimeField>::BigInt;
+    const MODULUS: Self::BigInt = <Self as PrimeField>::MODULUS;
 }
 
 impl<const N: usize> FmaddTrunc for BigInt<N> {

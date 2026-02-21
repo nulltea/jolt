@@ -388,7 +388,7 @@ where
         Y.push(*y);
 
         // Check consistency of (Y, ypos, yneg)
-        let two = P::ScalarField::from(2u64);
+        let two = P::ScalarField::from_u64(2u64);
         for i in 0..ell {
             if two * r * Y[i + 1]
                 != r * (P::ScalarField::one() - point[ell - i - 1]) * (ypos[i] + yneg[i])

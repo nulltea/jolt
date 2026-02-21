@@ -34,7 +34,7 @@ impl<P: Pairing> SRS<P> {
         let g1 = P::G1::rand(&mut rng);
         let g2 = P::G2::rand(&mut rng);
 
-        let scalar_bits = P::ScalarField::MODULUS_BIT_SIZE as usize;
+        let scalar_bits = <P::ScalarField as PrimeField>::MODULUS_BIT_SIZE as usize;
 
         let g1_window_size = FixedBase::get_mul_window_size(num_g1_powers);
         let g2_window_size = FixedBase::get_mul_window_size(num_g2_powers);

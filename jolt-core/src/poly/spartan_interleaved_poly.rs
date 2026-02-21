@@ -155,6 +155,7 @@ impl<const NUM_SVO_ROUNDS: usize, F: JoltField> SpartanInterleavedPolynomial<NUM
             0
         };
         let total_num_vars = num_step_vars + num_constraint_vars;
+        eprintln!("[VANILLA-SVO] num_steps={num_steps} padded_num_constraints={padded_num_constraints} num_step_vars={num_step_vars} num_constraint_vars={num_constraint_vars} total_num_vars={total_num_vars}");
 
         assert_eq!(
             tau.len(),

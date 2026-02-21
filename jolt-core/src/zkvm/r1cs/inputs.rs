@@ -219,8 +219,7 @@ impl R1CSCycleInputs {
         }
     }
 
-    /// Get field value for a specific input index (only for testing)
-    #[cfg(test)]
+    /// Get field value for a specific input index.
     pub fn to_field<F: JoltField>(&self, input_index: JoltR1CSInputs) -> F {
         match input_index {
             JoltR1CSInputs::LeftInstructionInput => self.left_input.to_field(),

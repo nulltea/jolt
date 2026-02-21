@@ -9,6 +9,7 @@ use crate::poly::opening_proof::{
     OpeningPoint, ProverOpeningAccumulator, VerifierOpeningAccumulator, BIG_ENDIAN,
 };
 use crate::poly::spartan_interleaved_poly::SpartanInterleavedPolynomial;
+use crate::poly::spartan_interleaved_poly_no_svo::SpartanInterleavedPolynomialNoSvo;
 use crate::poly::split_eq_poly::GruenSplitEqPolynomial;
 use crate::poly::unipoly::{CompressedUniPoly, UniPoly};
 use crate::transcripts::{AppendToTranscript, Transcript};
@@ -464,6 +465,35 @@ impl<F: JoltField, ProofTranscript: Transcript> SumcheckInstanceProof<F, ProofTr
             r,
             az_bz_cz_poly.final_sumcheck_evals(),
         )
+    }
+
+    #[tracing::instrument(skip_all, name = "Spartan::prove_spartan_no_svo")]
+    pub fn prove_spartan_no_svo(
+        preprocessing: &JoltSharedPreprocessing,
+        trace: &[Cycle],
+        num_rounds: usize,
+        tau: &[F::Challenge],
+        transcript: &mut ProofTranscript,
+    ) -> (Self, Vec<F::Challenge>, [F; 3]) {
+        let mut r: Vec<F::Challenge> = Vec::with_capacity(num_rounds);
+        let mut polys: Vec<CompressedUniPoly<F>> = Vec::with_capacity(num_rounds);
+        let mut claim = F::zero();
+
+        let mut eq_poly = GruenSplitEqPolynomial::new(tau, BindingOrder::LowToHigh);
+        let mut poly = SpartanInterleavedPolynomialNoSvo::<F>::new(preprocessing, trace);
+
+        poly.first_sumcheck_round(&mut eq_poly, transcript, &mut r, &mut polys, &mut claim);
+        for _ in 1..num_rounds {
+            poly.subsequent_sumcheck_round(
+                &mut eq_poly,
+                transcript,
+                &mut r,
+                &mut polys,
+                &mut claim,
+            );
+        }
+
+        (Self::new(polys), r, poly.final_sumcheck_evals())
     }
 
     #[tracing::instrument(skip_all)]

@@ -53,11 +53,17 @@ static mut MAX_NUM_ROWS: OnceCell<usize> = OnceCell::new();
 /// of columns in the matrix.
 static mut NUM_COLUMNS: OnceCell<usize> = OnceCell::new();
 
-pub struct DoryGlobals();
+pub struct DoryGlobals {
+    owns_globals: bool,
+}
 
 impl DoryGlobals {
     /// Initializes the static variables (`GLOBAL_T`, `MAX_NUM_ROWS`, and
     /// `NUM_COLUMNS`) used by Dory.
+    ///
+    /// Idempotent: if already initialized with the same values, returns a
+    /// non-owning guard that does not clear globals on drop. Panics if
+    /// called with different values than the existing initialization.
     pub fn initialize(K: usize, T: usize) -> Self {
         let matrix_size = K as u128 * T as u128;
         let num_columns = matrix_size.isqrt().next_power_of_two();
@@ -66,16 +72,46 @@ impl DoryGlobals {
         tracing::info!("[Dory PCS] # cols: {num_columns}");
 
         unsafe {
-            GLOBAL_T.set(T).expect("GLOBAL_T is already initialized");
-            MAX_NUM_ROWS
-                .set(num_rows as usize)
-                .expect("MAX_NUM_ROWS is already initialized");
-            NUM_COLUMNS
-                .set(num_columns as usize)
-                .expect("NUM_COLUMNS is already initialized");
+            match GLOBAL_T.set(T) {
+                Ok(()) => {
+                    // We won the race — set the remaining globals.
+                    MAX_NUM_ROWS
+                        .set(num_rows as usize)
+                        .expect("MAX_NUM_ROWS set after GLOBAL_T");
+                    NUM_COLUMNS
+                        .set(num_columns as usize)
+                        .expect("NUM_COLUMNS set after GLOBAL_T");
+                    return DoryGlobals { owns_globals: true };
+                }
+                Err(_) => {
+                    // Already initialized — verify same values.
+                    let existing = *GLOBAL_T.get().unwrap();
+                    assert_eq!(
+                        existing, T,
+                        "GLOBAL_T already initialized with different value: {existing} != {T}"
+                    );
+                    // Spin-wait briefly for the other globals in case of concurrent init.
+                    while MAX_NUM_ROWS.get().is_none() || NUM_COLUMNS.get().is_none() {
+                        std::hint::spin_loop();
+                    }
+                    assert_eq!(
+                        *MAX_NUM_ROWS.get().unwrap(),
+                        num_rows as usize,
+                        "MAX_NUM_ROWS mismatch"
+                    );
+                    assert_eq!(
+                        *NUM_COLUMNS.get().unwrap(),
+                        num_columns as usize,
+                        "NUM_COLUMNS mismatch"
+                    );
+                    return DoryGlobals {
+                        owns_globals: false,
+                    };
+                }
+            }
         }
 
-        DoryGlobals()
+        DoryGlobals { owns_globals: true }
     }
 
     /// Dory works by viewing the coefficients of a polynomial as a matrix.
@@ -122,6 +158,9 @@ impl DoryGlobals {
 /// regardless of whether a preceding test passed or failed.
 impl Drop for DoryGlobals {
     fn drop(&mut self) {
+        if !self.owns_globals {
+            return;
+        }
         unsafe {
             GLOBAL_T
                 .take()
@@ -251,7 +290,7 @@ where
     }
 
     fn scale(&self, k: &Self::Scalar) -> Self {
-        Self(self.0.cyclotomic_exp(k.0.into_bigint()))
+        Self(self.0.cyclotomic_exp(PrimeField::into_bigint(k.0)))
     }
 
     fn random<R: RngCore>(rng: &mut R) -> Self {

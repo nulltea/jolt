@@ -64,8 +64,7 @@ impl Constraint {
 }
 
 impl LC {
-    /// Evaluate this LC given the inputs for a R1CS cycle, using field semantics, only for testing
-    #[cfg(test)]
+    /// Evaluate this LC given the inputs for a R1CS cycle, using field semantics.
     pub fn evaluate_row_with<F: JoltField>(&self, inputs: &R1CSCycleInputs) -> F {
         let mut result = F::zero();
         self.for_each_term(|input_index, coeff| {
@@ -274,7 +273,7 @@ macro_rules! r1cs_prod_named {
 }
 
 /// Number of uniform R1CS constraints
-pub const NUM_R1CS_CONSTRAINTS: usize = 26;
+pub const NUM_R1CS_CONSTRAINTS: usize = 5;
 
 /// Static table of all 26 R1CS uniform constraints.
 pub static UNIFORM_R1CS: [NamedConstraint; NUM_R1CS_CONSTRAINTS] = [
@@ -315,184 +314,184 @@ pub static UNIFORM_R1CS: [NamedConstraint; NUM_R1CS_CONSTRAINTS] = [
     //     assert!(RightInstructionInput == 0)
     // }
     // Note that RightOperandIsRs2Value and RightOperandIsImm are mutually exclusive flags
-    r1cs_eq_conditional!(
-        name: ConstraintName::RightInputZeroOtherwise,
-        if { { 1i128 } - { JoltR1CSInputs::OpFlags(CircuitFlags::RightOperandIsRs2Value) } - { JoltR1CSInputs::OpFlags(CircuitFlags::RightOperandIsImm) } }
-        => ( { JoltR1CSInputs::RightInstructionInput } ) == ( { 0i128 } )
-    ),
-    // if Load || Store {
-    //     assert!(RamAddress == Rs1Value + Imm)
-    // } else {
-    //     assert!(RamAddress == 0)
-    // }
-    r1cs_if_else!(
-        name: ConstraintName::RamAddrEqRs1PlusImmIfLoadStore,
-        if { { JoltR1CSInputs::OpFlags(CircuitFlags::Load) } + { JoltR1CSInputs::OpFlags(CircuitFlags::Store) } }
-        => ( { JoltR1CSInputs::Rs1Value } + { JoltR1CSInputs::Imm } )
-        else ( { 0i128 } )
-        => ( { JoltR1CSInputs::RamAddress } )
-    ),
-    // if Load {
-    //     assert!(RamReadValue == RamWriteValue)
-    // }
-    r1cs_eq_conditional!(
-        name: ConstraintName::RamReadEqRamWriteIfLoad,
-        if { { JoltR1CSInputs::OpFlags(CircuitFlags::Load) } }
-        => ( { JoltR1CSInputs::RamReadValue } ) == ( { JoltR1CSInputs::RamWriteValue } )
-    ),
-    // if Load {
-    //     assert!(RamReadValue == RdWriteValue)
-    // }
-    r1cs_eq_conditional!(
-        name: ConstraintName::RamReadEqRdWriteIfLoad,
-        if { { JoltR1CSInputs::OpFlags(CircuitFlags::Load) } }
-        => ( { JoltR1CSInputs::RamReadValue } ) == ( { JoltR1CSInputs::RdWriteValue } )
-    ),
-    // if Store {
-    //     assert!(Rs2Value == RamWriteValue)
-    // }
-    r1cs_eq_conditional!(
-        name: ConstraintName::Rs2EqRamWriteIfStore,
-        if { { JoltR1CSInputs::OpFlags(CircuitFlags::Store) } }
-        => ( { JoltR1CSInputs::Rs2Value } ) == ( { JoltR1CSInputs::RamWriteValue } )
-    ),
-    // if AddOperands || SubtractOperands || MultiplyOperands {
-    //     // Lookup query is just RightLookupOperand
-    //     assert!(LeftLookupOperand == 0)
-    // } else {
-    //     assert!(LeftLookupOperand == LeftInstructionInput)
-    // }
-    r1cs_if_else!(
-        name: ConstraintName::LeftLookupZeroUnlessAddSubMul,
-        if { { JoltR1CSInputs::OpFlags(CircuitFlags::AddOperands) } + { JoltR1CSInputs::OpFlags(CircuitFlags::SubtractOperands) } + { JoltR1CSInputs::OpFlags(CircuitFlags::MultiplyOperands) } }
-        => ( { 0i128 } )
-        else ( { JoltR1CSInputs::LeftInstructionInput } )
-        => ( { JoltR1CSInputs::LeftLookupOperand } )
-    ),
-    // If AddOperands {
-    //     assert!(RightLookupOperand == LeftInstructionInput + RightInstructionInput)
-    // }
-    r1cs_eq_conditional!(
-        name: ConstraintName::RightLookupAdd,
-        if { { JoltR1CSInputs::OpFlags(CircuitFlags::AddOperands) } }
-        => ( { JoltR1CSInputs::RightLookupOperand } ) == ( { JoltR1CSInputs::LeftInstructionInput } + { JoltR1CSInputs::RightInstructionInput } )
-    ),
-    // If SubtractOperands {
-    //     assert!(RightLookupOperand == LeftInstructionInput - RightInstructionInput)
-    // }
-    // Converts from unsigned to twos-complement representation
-    r1cs_eq_conditional!(
-        name: ConstraintName::RightLookupSub,
-        if { { JoltR1CSInputs::OpFlags(CircuitFlags::SubtractOperands) } }
-        => ( { JoltR1CSInputs::RightLookupOperand } ) == ( { JoltR1CSInputs::LeftInstructionInput } - { JoltR1CSInputs::RightInstructionInput } + { 0x10000000000000000i128 } )
-    ),
-    r1cs_eq_conditional!(
-        name: ConstraintName::RightLookupEqProductIfMul,
-        if { { JoltR1CSInputs::OpFlags(CircuitFlags::MultiplyOperands) } }
-        => ( { JoltR1CSInputs::RightLookupOperand } ) == ( { JoltR1CSInputs::Product } )
-    ),
-    // if !(AddOperands || SubtractOperands || MultiplyOperands || Advice) {
-    //     assert!(RightLookupOperand == RightInstructionInput)
-    // }
-    // Arbitrary untrusted advice goes in right lookup operand
-    r1cs_eq_conditional!(
-        name: ConstraintName::RightLookupEqRightInputOtherwise,
-        if { { 1i128 } - { JoltR1CSInputs::OpFlags(CircuitFlags::AddOperands) } - { JoltR1CSInputs::OpFlags(CircuitFlags::SubtractOperands) } - { JoltR1CSInputs::OpFlags(CircuitFlags::MultiplyOperands) } - { JoltR1CSInputs::OpFlags(CircuitFlags::Advice) } }
-        => ( { JoltR1CSInputs::RightLookupOperand } ) == ( { JoltR1CSInputs::RightInstructionInput } )
-    ),
-    // if Assert {
-    //     assert!(LookupOutput == 1)
-    // }
-    r1cs_eq_conditional!(
-        name: ConstraintName::AssertLookupOne,
-        if { { JoltR1CSInputs::OpFlags(CircuitFlags::Assert) } }
-        => ( { JoltR1CSInputs::LookupOutput } ) == ( { 1i128 } )
-    ),
-    // if Rd != 0 && WriteLookupOutputToRD {
-    //     assert!(RdWriteValue == LookupOutput)
-    // }
-    r1cs_prod!(
-        name: ConstraintName::WriteLookupOutputToRDDef,
-        ({ JoltR1CSInputs::Rd })
-            * ({ JoltR1CSInputs::OpFlags(CircuitFlags::WriteLookupOutputToRD) })
-            == ({ JoltR1CSInputs::WriteLookupOutputToRD })
-    ),
-    r1cs_eq_conditional!(
-        name: ConstraintName::RdWriteEqLookupIfWriteLookupToRd,
-        if { { JoltR1CSInputs::WriteLookupOutputToRD } }
-        => ( { JoltR1CSInputs::RdWriteValue } ) == ( { JoltR1CSInputs::LookupOutput } )
-    ),
-    // if Rd != 0 && Jump {
-    //     if !isCompressed {
-    //          assert!(RdWriteValue == UnexpandedPC + 4)
-    //     } else {
-    //          assert!(RdWriteValue == UnexpandedPC + 2)
-    //     }
-    // }
-    r1cs_prod!(
-        name: ConstraintName::WritePCtoRDDef,
-        ({ JoltR1CSInputs::Rd }) * ({ JoltR1CSInputs::OpFlags(CircuitFlags::Jump) })
-            == ({ JoltR1CSInputs::WritePCtoRD })
-    ),
-    r1cs_eq_conditional!(
-        name: ConstraintName::RdWriteEqPCPlusConstIfWritePCtoRD,
-        if { { JoltR1CSInputs::WritePCtoRD } }
-        => ( { JoltR1CSInputs::RdWriteValue } ) == ( { JoltR1CSInputs::UnexpandedPC } + { 4i128 } - { 2 * JoltR1CSInputs::OpFlags(CircuitFlags::IsCompressed) } )
-    ),
-    // if Jump && !NextIsNoop {
-    //     assert!(NextUnexpandedPC == LookupOutput)
-    // }
-    r1cs_prod!(
-        name: ConstraintName::ShouldJumpDef,
-        ({ JoltR1CSInputs::OpFlags(CircuitFlags::Jump) })
-            * ({ 1i128 } - { JoltR1CSInputs::NextIsNoop })
-            == ({ JoltR1CSInputs::ShouldJump })
-    ),
-    r1cs_eq_conditional!(
-        name: ConstraintName::NextUnexpPCEqLookupIfShouldJump,
-        if { { JoltR1CSInputs::ShouldJump } }
-        => ( { JoltR1CSInputs::NextUnexpandedPC } ) == ( { JoltR1CSInputs::LookupOutput } )
-    ),
-    // if Branch && LookupOutput {
-    //     assert!(NextUnexpandedPC == UnexpandedPC + Imm)
-    // }
-    r1cs_prod!(
-        name: ConstraintName::ShouldBranchDef,
-        ({ JoltR1CSInputs::OpFlags(CircuitFlags::Branch) }) * ({ JoltR1CSInputs::LookupOutput })
-            == ({ JoltR1CSInputs::ShouldBranch })
-    ),
-    r1cs_eq_conditional!(
-        name: ConstraintName::NextUnexpPCEqPCPlusImmIfShouldBranch,
-        if { { JoltR1CSInputs::ShouldBranch } }
-        => ( { JoltR1CSInputs::NextUnexpandedPC } ) == ( { JoltR1CSInputs::UnexpandedPC } + { JoltR1CSInputs::Imm } )
-    ),
-    // if !(ShouldBranch || Jump) {
-    //     if DoNotUpdatePC {
-    //         assert!(NextUnexpandedPC == UnexpandedPC)
-    //     } else if isCompressed {
-    //         assert!(NextUnexpandedPC == UnexpandedPC + 2)
-    //     } else {
-    //         assert!(NextUnexpandedPC == UnexpandedPC + 4)
-    //     }
-    // }
-    // Note that ShouldBranch and Jump instructions are mutually exclusive
-    // And that DoNotUpdatePC and isCompressed are mutually exclusive
-    r1cs_eq_conditional!(
-        name: ConstraintName::NextUnexpPCUpdateOtherwise,
-        if { { 1i128 } - { JoltR1CSInputs::ShouldBranch } - { JoltR1CSInputs::OpFlags(CircuitFlags::Jump) } }
-        => ( { JoltR1CSInputs::NextUnexpandedPC } )
-           == ( { JoltR1CSInputs::UnexpandedPC } + { 4i128 }
-                - { 4 * JoltR1CSInputs::OpFlags(CircuitFlags::DoNotUpdateUnexpandedPC) }
-                - { 2 * JoltR1CSInputs::OpFlags(CircuitFlags::IsCompressed) } )
-    ),
-    // if Inline {
-    //     assert!(NextPC == PC + 1)
-    // }
-    r1cs_eq_conditional!(
-        name: ConstraintName::NextPCEqPCPlusOneIfInline,
-        if { { JoltR1CSInputs::OpFlags(CircuitFlags::InlineSequenceInstruction) } }
-        => ( { JoltR1CSInputs::NextPC } ) == ( { JoltR1CSInputs::PC } + { 1i128 } )
-    ),
+    // r1cs_eq_conditional!(
+    //     name: ConstraintName::RightInputZeroOtherwise,
+    //     if { { 1i128 } - { JoltR1CSInputs::OpFlags(CircuitFlags::RightOperandIsRs2Value) } - { JoltR1CSInputs::OpFlags(CircuitFlags::RightOperandIsImm) } }
+    //     => ( { JoltR1CSInputs::RightInstructionInput } ) == ( { 0i128 } )
+    // ),
+    // // if Load || Store {
+    // //     assert!(RamAddress == Rs1Value + Imm)
+    // // } else {
+    // //     assert!(RamAddress == 0)
+    // // }
+    // r1cs_if_else!(
+    //     name: ConstraintName::RamAddrEqRs1PlusImmIfLoadStore,
+    //     if { { JoltR1CSInputs::OpFlags(CircuitFlags::Load) } + { JoltR1CSInputs::OpFlags(CircuitFlags::Store) } }
+    //     => ( { JoltR1CSInputs::Rs1Value } + { JoltR1CSInputs::Imm } )
+    //     else ( { 0i128 } )
+    //     => ( { JoltR1CSInputs::RamAddress } )
+    // ),
+    // // if Load {
+    // //     assert!(RamReadValue == RamWriteValue)
+    // // }
+    // r1cs_eq_conditional!(
+    //     name: ConstraintName::RamReadEqRamWriteIfLoad,
+    //     if { { JoltR1CSInputs::OpFlags(CircuitFlags::Load) } }
+    //     => ( { JoltR1CSInputs::RamReadValue } ) == ( { JoltR1CSInputs::RamWriteValue } )
+    // ),
+    // // if Load {
+    // //     assert!(RamReadValue == RdWriteValue)
+    // // }
+    // r1cs_eq_conditional!(
+    //     name: ConstraintName::RamReadEqRdWriteIfLoad,
+    //     if { { JoltR1CSInputs::OpFlags(CircuitFlags::Load) } }
+    //     => ( { JoltR1CSInputs::RamReadValue } ) == ( { JoltR1CSInputs::RdWriteValue } )
+    // ),
+    // // if Store {
+    // //     assert!(Rs2Value == RamWriteValue)
+    // // }
+    // r1cs_eq_conditional!(
+    //     name: ConstraintName::Rs2EqRamWriteIfStore,
+    //     if { { JoltR1CSInputs::OpFlags(CircuitFlags::Store) } }
+    //     => ( { JoltR1CSInputs::Rs2Value } ) == ( { JoltR1CSInputs::RamWriteValue } )
+    // ),
+    // // if AddOperands || SubtractOperands || MultiplyOperands {
+    // //     // Lookup query is just RightLookupOperand
+    // //     assert!(LeftLookupOperand == 0)
+    // // } else {
+    // //     assert!(LeftLookupOperand == LeftInstructionInput)
+    // // }
+    // r1cs_if_else!(
+    //     name: ConstraintName::LeftLookupZeroUnlessAddSubMul,
+    //     if { { JoltR1CSInputs::OpFlags(CircuitFlags::AddOperands) } + { JoltR1CSInputs::OpFlags(CircuitFlags::SubtractOperands) } + { JoltR1CSInputs::OpFlags(CircuitFlags::MultiplyOperands) } }
+    //     => ( { 0i128 } )
+    //     else ( { JoltR1CSInputs::LeftInstructionInput } )
+    //     => ( { JoltR1CSInputs::LeftLookupOperand } )
+    // ),
+    // // If AddOperands {
+    // //     assert!(RightLookupOperand == LeftInstructionInput + RightInstructionInput)
+    // // }
+    // r1cs_eq_conditional!(
+    //     name: ConstraintName::RightLookupAdd,
+    //     if { { JoltR1CSInputs::OpFlags(CircuitFlags::AddOperands) } }
+    //     => ( { JoltR1CSInputs::RightLookupOperand } ) == ( { JoltR1CSInputs::LeftInstructionInput } + { JoltR1CSInputs::RightInstructionInput } )
+    // ),
+    // // If SubtractOperands {
+    // //     assert!(RightLookupOperand == LeftInstructionInput - RightInstructionInput)
+    // // }
+    // // Converts from unsigned to twos-complement representation
+    // r1cs_eq_conditional!(
+    //     name: ConstraintName::RightLookupSub,
+    //     if { { JoltR1CSInputs::OpFlags(CircuitFlags::SubtractOperands) } }
+    //     => ( { JoltR1CSInputs::RightLookupOperand } ) == ( { JoltR1CSInputs::LeftInstructionInput } - { JoltR1CSInputs::RightInstructionInput } + { 0x10000000000000000i128 } )
+    // ),
+    // r1cs_eq_conditional!(
+    //     name: ConstraintName::RightLookupEqProductIfMul,
+    //     if { { JoltR1CSInputs::OpFlags(CircuitFlags::MultiplyOperands) } }
+    //     => ( { JoltR1CSInputs::RightLookupOperand } ) == ( { JoltR1CSInputs::Product } )
+    // ),
+    // // if !(AddOperands || SubtractOperands || MultiplyOperands || Advice) {
+    // //     assert!(RightLookupOperand == RightInstructionInput)
+    // // }
+    // // Arbitrary untrusted advice goes in right lookup operand
+    // r1cs_eq_conditional!(
+    //     name: ConstraintName::RightLookupEqRightInputOtherwise,
+    //     if { { 1i128 } - { JoltR1CSInputs::OpFlags(CircuitFlags::AddOperands) } - { JoltR1CSInputs::OpFlags(CircuitFlags::SubtractOperands) } - { JoltR1CSInputs::OpFlags(CircuitFlags::MultiplyOperands) } - { JoltR1CSInputs::OpFlags(CircuitFlags::Advice) } }
+    //     => ( { JoltR1CSInputs::RightLookupOperand } ) == ( { JoltR1CSInputs::RightInstructionInput } )
+    // ),
+    // // if Assert {
+    // //     assert!(LookupOutput == 1)
+    // // }
+    // r1cs_eq_conditional!(
+    //     name: ConstraintName::AssertLookupOne,
+    //     if { { JoltR1CSInputs::OpFlags(CircuitFlags::Assert) } }
+    //     => ( { JoltR1CSInputs::LookupOutput } ) == ( { 1i128 } )
+    // ),
+    // // if Rd != 0 && WriteLookupOutputToRD {
+    // //     assert!(RdWriteValue == LookupOutput)
+    // // }
+    // r1cs_prod!(
+    //     name: ConstraintName::WriteLookupOutputToRDDef,
+    //     ({ JoltR1CSInputs::Rd })
+    //         * ({ JoltR1CSInputs::OpFlags(CircuitFlags::WriteLookupOutputToRD) })
+    //         == ({ JoltR1CSInputs::WriteLookupOutputToRD })
+    // ),
+    // r1cs_eq_conditional!(
+    //     name: ConstraintName::RdWriteEqLookupIfWriteLookupToRd,
+    //     if { { JoltR1CSInputs::WriteLookupOutputToRD } }
+    //     => ( { JoltR1CSInputs::RdWriteValue } ) == ( { JoltR1CSInputs::LookupOutput } )
+    // ),
+    // // if Rd != 0 && Jump {
+    // //     if !isCompressed {
+    // //          assert!(RdWriteValue == UnexpandedPC + 4)
+    // //     } else {
+    // //          assert!(RdWriteValue == UnexpandedPC + 2)
+    // //     }
+    // // }
+    // r1cs_prod!(
+    //     name: ConstraintName::WritePCtoRDDef,
+    //     ({ JoltR1CSInputs::Rd }) * ({ JoltR1CSInputs::OpFlags(CircuitFlags::Jump) })
+    //         == ({ JoltR1CSInputs::WritePCtoRD })
+    // ),
+    // r1cs_eq_conditional!(
+    //     name: ConstraintName::RdWriteEqPCPlusConstIfWritePCtoRD,
+    //     if { { JoltR1CSInputs::WritePCtoRD } }
+    //     => ( { JoltR1CSInputs::RdWriteValue } ) == ( { JoltR1CSInputs::UnexpandedPC } + { 4i128 } - { 2 * JoltR1CSInputs::OpFlags(CircuitFlags::IsCompressed) } )
+    // ),
+    // // if Jump && !NextIsNoop {
+    // //     assert!(NextUnexpandedPC == LookupOutput)
+    // // }
+    // r1cs_prod!(
+    //     name: ConstraintName::ShouldJumpDef,
+    //     ({ JoltR1CSInputs::OpFlags(CircuitFlags::Jump) })
+    //         * ({ 1i128 } - { JoltR1CSInputs::NextIsNoop })
+    //         == ({ JoltR1CSInputs::ShouldJump })
+    // ),
+    // r1cs_eq_conditional!(
+    //     name: ConstraintName::NextUnexpPCEqLookupIfShouldJump,
+    //     if { { JoltR1CSInputs::ShouldJump } }
+    //     => ( { JoltR1CSInputs::NextUnexpandedPC } ) == ( { JoltR1CSInputs::LookupOutput } )
+    // ),
+    // // if Branch && LookupOutput {
+    // //     assert!(NextUnexpandedPC == UnexpandedPC + Imm)
+    // // }
+    // r1cs_prod!(
+    //     name: ConstraintName::ShouldBranchDef,
+    //     ({ JoltR1CSInputs::OpFlags(CircuitFlags::Branch) }) * ({ JoltR1CSInputs::LookupOutput })
+    //         == ({ JoltR1CSInputs::ShouldBranch })
+    // ),
+    // r1cs_eq_conditional!(
+    //     name: ConstraintName::NextUnexpPCEqPCPlusImmIfShouldBranch,
+    //     if { { JoltR1CSInputs::ShouldBranch } }
+    //     => ( { JoltR1CSInputs::NextUnexpandedPC } ) == ( { JoltR1CSInputs::UnexpandedPC } + { JoltR1CSInputs::Imm } )
+    // ),
+    // // if !(ShouldBranch || Jump) {
+    // //     if DoNotUpdatePC {
+    // //         assert!(NextUnexpandedPC == UnexpandedPC)
+    // //     } else if isCompressed {
+    // //         assert!(NextUnexpandedPC == UnexpandedPC + 2)
+    // //     } else {
+    // //         assert!(NextUnexpandedPC == UnexpandedPC + 4)
+    // //     }
+    // // }
+    // // Note that ShouldBranch and Jump instructions are mutually exclusive
+    // // And that DoNotUpdatePC and isCompressed are mutually exclusive
+    // r1cs_eq_conditional!(
+    //     name: ConstraintName::NextUnexpPCUpdateOtherwise,
+    //     if { { 1i128 } - { JoltR1CSInputs::ShouldBranch } - { JoltR1CSInputs::OpFlags(CircuitFlags::Jump) } }
+    //     => ( { JoltR1CSInputs::NextUnexpandedPC } )
+    //        == ( { JoltR1CSInputs::UnexpandedPC } + { 4i128 }
+    //             - { 4 * JoltR1CSInputs::OpFlags(CircuitFlags::DoNotUpdateUnexpandedPC) }
+    //             - { 2 * JoltR1CSInputs::OpFlags(CircuitFlags::IsCompressed) } )
+    // ),
+    // // if Inline {
+    // //     assert!(NextPC == PC + 1)
+    // // }
+    // r1cs_eq_conditional!(
+    //     name: ConstraintName::NextPCEqPCPlusOneIfInline,
+    //     if { { JoltR1CSInputs::OpFlags(CircuitFlags::InlineSequenceInstruction) } }
+    //     => ( { JoltR1CSInputs::NextPC } ) == ( { JoltR1CSInputs::PC } + { 1i128 } )
+    // ),
 ];
 
 /// Evaluate Az by name using a fully materialized R1CS cycle inputs

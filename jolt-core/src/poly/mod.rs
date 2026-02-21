@@ -12,5 +12,6 @@ pub mod ra_poly;
 pub mod range_mask_polynomial;
 pub mod rlc_polynomial;
 pub mod spartan_interleaved_poly;
+pub mod spartan_interleaved_poly_no_svo;
 pub mod split_eq_poly;
 pub mod unipoly;
