@@ -386,49 +386,25 @@ fn bind_sparse_coeffs_low_to_high<F: JoltField>(
 
         let out_base = 3 * block;
 
-        if let (Some(low), Some(high)) = (a0, a1) {
+        if a0.is_some() || a1.is_some() {
+            let (low, high) = (a0.unwrap_or(F::zero()), a1.unwrap_or(F::zero()));
             let v = low + (high - low) * r;
-            if !v.is_zero() {
-                out.push((out_base, v).into());
-            }
-        } else if let Some(low) = a0 {
-            if !low.is_zero() {
-                out.push((out_base, low).into());
-            }
-        } else if let Some(high) = a1 {
-            let v = high * r;
             if !v.is_zero() {
                 out.push((out_base, v).into());
             }
         }
 
-        if let (Some(low), Some(high)) = (b0, b1) {
+        if b0.is_some() || b1.is_some() {
+            let (low, high) = (b0.unwrap_or(F::zero()), b1.unwrap_or(F::zero()));
             let v = low + (high - low) * r;
-            if !v.is_zero() {
-                out.push((out_base + 1, v).into());
-            }
-        } else if let Some(low) = b0 {
-            if !low.is_zero() {
-                out.push((out_base + 1, low).into());
-            }
-        } else if let Some(high) = b1 {
-            let v = high * r;
             if !v.is_zero() {
                 out.push((out_base + 1, v).into());
             }
         }
 
-        if let (Some(low), Some(high)) = (c0, c1) {
+        if c0.is_some() || c1.is_some() {
+            let (low, high) = (c0.unwrap_or(F::zero()), c1.unwrap_or(F::zero()));
             let v = low + (high - low) * r;
-            if !v.is_zero() {
-                out.push((out_base + 2, v).into());
-            }
-        } else if let Some(low) = c0 {
-            if !low.is_zero() {
-                out.push((out_base + 2, low).into());
-            }
-        } else if let Some(high) = c1 {
-            let v = high * r;
             if !v.is_zero() {
                 out.push((out_base + 2, v).into());
             }
