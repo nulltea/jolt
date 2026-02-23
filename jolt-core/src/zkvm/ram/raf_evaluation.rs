@@ -129,6 +129,24 @@ impl<F: JoltField> RafEvaluationSumcheck<F> {
     }
 }
 
+impl<F: JoltField> RafEvaluationSumcheck<F> {
+    pub fn log_K(&self) -> usize {
+        self.log_K
+    }
+
+    pub fn start_address(&self) -> u64 {
+        self.start_address
+    }
+
+    pub fn ra_final_claim(&self) -> F {
+        self.prover_state
+            .as_ref()
+            .expect("prover state missing")
+            .ra
+            .final_sumcheck_claim()
+    }
+}
+
 impl<F: JoltField, T: Transcript> SumcheckInstance<F, T> for RafEvaluationSumcheck<F> {
     fn degree(&self) -> usize {
         2

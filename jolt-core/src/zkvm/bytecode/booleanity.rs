@@ -122,6 +122,33 @@ impl<F: JoltField> BooleanitySumcheck<F> {
             d,
         }
     }
+
+    pub fn d(&self) -> usize {
+        self.d
+    }
+
+    pub fn log_K_chunk(&self) -> usize {
+        self.log_K_chunk
+    }
+
+    pub fn gamma_powers(&self) -> &[F] {
+        &self.gamma
+    }
+
+    pub fn r_address(&self) -> &[F::Challenge] {
+        &self.r_address
+    }
+
+    /// Returns the final sumcheck claims for each `H` polynomial (prover only).
+    pub fn h_final_claims(&self) -> Vec<F> {
+        self.prover_state
+            .as_ref()
+            .expect("h_final_claims called on verifier instance")
+            .H
+            .iter()
+            .map(|h| h.final_sumcheck_claim())
+            .collect()
+    }
 }
 
 impl<F: JoltField> BooleanityProverState<F> {

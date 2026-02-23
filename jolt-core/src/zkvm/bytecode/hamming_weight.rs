@@ -82,6 +82,25 @@ impl<F: JoltField> HammingWeightSumcheck<F> {
             prover_state: None,
         }
     }
+
+    pub fn d(&self) -> usize {
+        self.d
+    }
+
+    pub fn gamma_powers(&self) -> &[F] {
+        &self.gamma
+    }
+
+    /// Returns the final sumcheck claims for each `ra` polynomial (prover only).
+    pub fn ra_final_claims(&self) -> Vec<F> {
+        self.prover_state
+            .as_ref()
+            .expect("ra_final_claims called on verifier instance")
+            .ra
+            .iter()
+            .map(|ra| ra.final_sumcheck_claim())
+            .collect()
+    }
 }
 
 impl<F: JoltField, T: Transcript> SumcheckInstance<F, T> for HammingWeightSumcheck<F> {

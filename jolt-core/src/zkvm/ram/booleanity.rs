@@ -205,6 +205,34 @@ impl<F: JoltField> BooleanitySumcheck<F> {
     }
 }
 
+impl<F: JoltField> BooleanitySumcheck<F> {
+    pub fn d(&self) -> usize {
+        self.d
+    }
+
+    pub fn r_address(&self) -> &[F::Challenge] {
+        &self.r_address
+    }
+
+    pub fn r_cycle(&self) -> &[F::Challenge] {
+        &self.r_cycle
+    }
+
+    pub fn gamma_powers(&self) -> &[F] {
+        &self.gamma_powers
+    }
+
+    pub fn h_final_claims(&self) -> Vec<F> {
+        self.prover_state
+            .as_ref()
+            .expect("prover state missing")
+            .H
+            .iter()
+            .map(|p| p.final_sumcheck_claim())
+            .collect()
+    }
+}
+
 impl<F: JoltField, T: Transcript> SumcheckInstance<F, T> for BooleanitySumcheck<F> {
     fn degree(&self) -> usize {
         3

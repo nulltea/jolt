@@ -147,6 +147,26 @@ impl<F: JoltField> HammingWeightSumcheck<F> {
     }
 }
 
+impl<F: JoltField> HammingWeightSumcheck<F> {
+    pub fn d(&self) -> usize {
+        self.d
+    }
+
+    pub fn gamma_powers(&self) -> &[F] {
+        &self.gamma_powers
+    }
+
+    pub fn ra_final_claims(&self) -> Vec<F> {
+        self.prover_state
+            .as_ref()
+            .expect("prover state missing")
+            .ra
+            .iter()
+            .map(|p| p.final_sumcheck_claim())
+            .collect()
+    }
+}
+
 impl<F: JoltField, T: Transcript> SumcheckInstance<F, T> for HammingWeightSumcheck<F> {
     fn degree(&self) -> usize {
         1

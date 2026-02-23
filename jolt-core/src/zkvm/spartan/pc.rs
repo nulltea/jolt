@@ -126,6 +126,71 @@ impl<F: JoltField> PCSumcheck<F> {
             gamma_squared,
         }
     }
+
+    /// Construct the verifier-side PC sumcheck from already-computed public values.
+    ///
+    /// This is intended for external drivers (e.g. MPC coordinators) that do not
+    /// have access to a vanilla `StateManager` but want to reuse the vanilla
+    /// `PCSumcheck` logic and transcript ordering.
+    pub fn new_verifier_from_openings(input_claim: F, gamma: F, log_T: usize) -> Self {
+        let gamma_squared = gamma.square();
+        Self {
+            input_claim,
+            gamma,
+            gamma_squared,
+            log_T,
+            prover_state: None,
+        }
+    }
+
+    /// Construct the prover-side PC sumcheck from public witness polynomials.
+    ///
+    /// The polynomials must correspond to the same `r_cycle` used to build `eq_plus_one_poly`.
+    /// This is intended for public-only execution models (e.g. one designated worker).
+    pub fn new_prover_from_polys(
+        input_claim: F,
+        gamma: F,
+        log_T: usize,
+        unexpanded_pc_poly: MultilinearPolynomial<F>,
+        pc_poly: MultilinearPolynomial<F>,
+        is_noop_poly: MultilinearPolynomial<F>,
+        eq_plus_one_poly: MultilinearPolynomial<F>,
+    ) -> Self {
+        let gamma_squared = gamma.square();
+        Self {
+            input_claim,
+            gamma,
+            gamma_squared,
+            log_T,
+            prover_state: Some(PCSumcheckProverState {
+                unexpanded_pc_poly,
+                pc_poly,
+                is_noop_poly,
+                eq_plus_one_poly,
+            }),
+        }
+    }
+
+    /// Return the final evaluations of (UnexpandedPC, PC, IsNoop) after all rounds
+    /// have been bound (i.e. at the shift opening point).
+    pub fn final_shift_evals(&self) -> (F, F, F) {
+        let ps = self.prover_state.as_ref().expect("Prover state not initialized");
+        (
+            ps.unexpanded_pc_poly.final_sumcheck_claim(),
+            ps.pc_poly.final_sumcheck_claim(),
+            ps.is_noop_poly.final_sumcheck_claim(),
+        )
+    }
+
+    /// Return the batching challenge `gamma` used by this instance.
+    pub fn gamma(&self) -> F {
+        self.gamma
+    }
+
+    /// Return `gamma^2` used by this instance.
+    pub fn gamma_squared(&self) -> F {
+        self.gamma_squared
+    }
 }
 
 impl<F: JoltField, T: Transcript> SumcheckInstance<F, T> for PCSumcheck<F> {

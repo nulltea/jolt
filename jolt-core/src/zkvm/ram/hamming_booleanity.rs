@@ -80,6 +80,20 @@ impl<F: JoltField> HammingBooleanitySumcheck<F> {
     }
 }
 
+impl<F: JoltField> HammingBooleanitySumcheck<F> {
+    pub fn log_T(&self) -> usize {
+        self.log_T
+    }
+
+    pub fn h_final_claim(&self) -> F {
+        self.prover_state
+            .as_ref()
+            .expect("prover state missing")
+            .H
+            .final_sumcheck_claim()
+    }
+}
+
 impl<F: JoltField, T: Transcript> SumcheckInstance<F, T> for HammingBooleanitySumcheck<F> {
     fn degree(&self) -> usize {
         DEGREE

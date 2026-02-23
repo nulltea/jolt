@@ -267,6 +267,34 @@ impl<F: JoltField> RaSumcheck<F> {
     }
 }
 
+impl<F: JoltField> RaSumcheck<F> {
+    pub fn d(&self) -> usize {
+        self.d
+    }
+
+    pub fn gamma(&self) -> [F; 3] {
+        self.gamma
+    }
+
+    pub fn r_cycle(&self) -> &[Vec<F::Challenge>; 3] {
+        &self.r_cycle
+    }
+
+    pub fn r_address_chunks(&self) -> &[Vec<F::Challenge>] {
+        &self.r_address_chunks
+    }
+
+    pub fn ra_i_final_claims(&self) -> Vec<F> {
+        self.prover_state
+            .as_ref()
+            .expect("prover state missing")
+            .ra_i_polys
+            .iter()
+            .map(|p| p.final_sumcheck_claim())
+            .collect()
+    }
+}
+
 impl<F: JoltField, T: Transcript> SumcheckInstance<F, T> for RaSumcheck<F> {
     fn degree(&self) -> usize {
         self.d + 1

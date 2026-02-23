@@ -836,6 +836,52 @@ impl<F: JoltField, T: Transcript> SumcheckInstance<F, T> for ReadRafSumcheck<F> 
 }
 
 impl<F: JoltField> ReadRafSumcheck<F> {
+    pub fn d(&self) -> usize {
+        self.d
+    }
+
+    pub fn log_K(&self) -> usize {
+        self.log_K
+    }
+
+    pub fn log_K_chunk(&self) -> usize {
+        self.log_K_chunk
+    }
+
+    /// Returns the final sumcheck claim for `ra[i]` (prover only).
+    pub fn ra_final_claim(&self, i: usize) -> F {
+        self.prover_state
+            .as_ref()
+            .expect("ra_final_claim called on verifier instance")
+            .ra[i]
+            .final_sumcheck_claim()
+    }
+
+    pub fn gamma_sqr(&self) -> F {
+        self.gamma_sqr
+    }
+
+    pub fn gamma_cub(&self) -> F {
+        self.gamma_cub
+    }
+
+    /// Returns `[gamma^0, gamma^1, gamma^2]` (the per-stage gamma weights).
+    pub fn gamma_stages(&self) -> [F; 3] {
+        self.gamma
+    }
+
+    /// Evaluates `int_poly` (the IdentityPolynomial) at the given point.
+    pub fn int_poly_evaluate(&self, r: &[F::Challenge]) -> F {
+        use crate::poly::multilinear_polynomial::PolynomialEvaluation;
+        self.int_poly.evaluate(r)
+    }
+
+    /// Evaluates each `val_poly` at `r_address` and returns the three evaluations.
+    pub fn val_polys_evaluate(&self, r_address: &[F::Challenge]) -> [F; 3] {
+        use crate::poly::multilinear_polynomial::PolynomialEvaluation;
+        std::array::from_fn(|i| self.val_polys[i].evaluate(r_address))
+    }
+
     fn init_log_t_rounds(&mut self) {
         let ps = self
             .prover_state

@@ -764,6 +764,13 @@ impl<F: JoltField> ReadRafSumcheck<F> {
             },
         );
 
+        if round == 0 {
+            eprintln!(
+                "[vanilla ReadRaf] round=0 read_checking=[{:?}, {:?}] raf=[{:?}, {:?}]",
+                read_checking[0], read_checking[1], raf[0], raf[1],
+            );
+        }
+
         [read_checking[0] + raf[0], read_checking[1] + raf[1]]
     }
 
