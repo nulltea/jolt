@@ -200,7 +200,7 @@ pub struct PrefixSuffixDecomposition<F: JoltField, const ORDER: usize> {
     poly: Box<dyn PrefixSuffixPolynomial<F, ORDER> + Send + Sync>,
     #[allocative(skip)]
     P: [Option<Arc<RwLock<CachedPolynomial<F>>>>; ORDER],
-    Q: [DensePolynomial<F>; ORDER],
+    pub Q: [DensePolynomial<F>; ORDER],
     chunk_len: usize,
     total_len: usize,
     phase: usize,

@@ -86,7 +86,7 @@ pub trait SparseDenseSuffix: 'static + Sync {
 
 /// An enum containing all suffixes used by Jolt's instruction lookup tables.
 #[repr(u8)]
-#[derive(EnumCountMacro, EnumIter, FromPrimitive)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, EnumCountMacro, EnumIter, FromPrimitive)]
 pub enum Suffixes {
     One,
     And,

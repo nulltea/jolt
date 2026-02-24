@@ -685,6 +685,7 @@ impl<F: JoltField> ReadRafProverState<F> {
                         *poly = DensePolynomial::new(std::mem::take(&mut coeffs));
                     });
             });
+
     }
 
     /// To be called at the end of each phase, after binding is done
@@ -763,13 +764,6 @@ impl<F: JoltField> ReadRafSumcheck<F> {
                 raf = self.prover_msg_raf();
             },
         );
-
-        if round == 0 {
-            eprintln!(
-                "[vanilla ReadRaf] round=0 read_checking=[{:?}, {:?}] raf=[{:?}, {:?}]",
-                read_checking[0], read_checking[1], raf[0], raf[1],
-            );
-        }
 
         [read_checking[0] + raf[0], read_checking[1] + raf[1]]
     }
