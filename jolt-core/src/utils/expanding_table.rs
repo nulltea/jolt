@@ -44,6 +44,10 @@ impl<F: JoltField> ExpandingTable<F> {
         self.values[..self.len].to_vec()
     }
 
+    pub fn values(&self) -> &[F] {
+        &self.values[..self.len]
+    }
+
     /// Updates this table (expanding it by a factor of 2) to incorporate
     /// the new random challenge `r_j`.
     #[tracing::instrument(skip_all, name = "ExpandingTable::update")]
