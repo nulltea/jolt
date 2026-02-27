@@ -78,6 +78,36 @@ impl<F: JoltField> HammingBooleanitySumcheck<F> {
             log_T,
         }
     }
+
+    /// Construct a prover instance from pre-extracted data (no `StateManager` needed).
+    ///
+    /// `ram_addrs` contains remapped RAM addresses (0 for NoOp / padding cycles).
+    /// `r_cycle` is the opening point from `(LookupOutput, SpartanOuter)`.
+    pub fn new_prover_from_parts(ram_addrs: &[u64], r_cycle: &[F::Challenge]) -> Self {
+        let T = ram_addrs.len();
+        let log_T = T.log_2();
+
+        let H: Vec<u8> = ram_addrs
+            .par_iter()
+            .map(|&addr| if addr == 0 { 0 } else { 1 })
+            .collect();
+        let H = MultilinearPolynomial::from(H);
+
+        let eq_r_cycle = MultilinearPolynomial::from(EqPolynomial::<F>::evals(r_cycle));
+
+        Self {
+            prover_state: Some(HammingBooleanityProverState { eq_r_cycle, H }),
+            log_T,
+        }
+    }
+
+    /// Construct a verifier instance from log_T only (no `StateManager` needed).
+    pub fn new_verifier_from_parts(log_T: usize) -> Self {
+        Self {
+            prover_state: None,
+            log_T,
+        }
+    }
 }
 
 impl<F: JoltField> HammingBooleanitySumcheck<F> {

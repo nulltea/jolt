@@ -184,6 +184,60 @@ impl<F: JoltField> RaSumcheck<F> {
         }
     }
 
+    /// Construct a prover instance from pre-extracted parts (no `StateManager`).
+    ///
+    /// * `gamma` — `[1, γ, γ²]`
+    /// * `ra_claim` — combined claim `γ⁰·val + γ¹·rw + γ²·raf`
+    /// * `d` — number of decomposition parts
+    /// * `T` — trace length
+    /// * `r_cycle` — three random challenge vectors (val, rw, raf)
+    /// * `r_address_chunks` — d chunks of r_address
+    /// * `ra_i_polys` — d `RaPolynomial` instances built from trace addresses
+    /// * `eq_poly` — gamma-weighted linear combination of eq polynomials
+    pub fn new_prover_from_parts(
+        gamma: [F; 3],
+        ra_claim: F,
+        d: usize,
+        T: usize,
+        r_cycle: [Vec<F::Challenge>; 3],
+        r_address_chunks: Vec<Vec<F::Challenge>>,
+        ra_i_polys: Vec<RaPolynomial<u8, F>>,
+        eq_poly: MultilinearPolynomial<F>,
+    ) -> Self {
+        Self {
+            gamma,
+            ra_claim,
+            d,
+            T,
+            r_cycle,
+            r_address_chunks,
+            prover_state: Some(RaProverState {
+                ra_i_polys,
+                eq_poly,
+            }),
+        }
+    }
+
+    /// Construct a verifier-like instance from pre-extracted parts (no `StateManager`).
+    pub fn new_verifier_from_parts(
+        gamma: [F; 3],
+        ra_claim: F,
+        d: usize,
+        T: usize,
+        r_cycle: [Vec<F::Challenge>; 3],
+        r_address_chunks: Vec<Vec<F::Challenge>>,
+    ) -> Self {
+        Self {
+            gamma,
+            ra_claim,
+            d,
+            T,
+            r_cycle,
+            r_address_chunks,
+            prover_state: None,
+        }
+    }
+
     pub fn new_verifier<ProofTranscript: Transcript, PCS: CommitmentScheme<Field = F>>(
         state_manager: &mut StateManager<'_, F, ProofTranscript, PCS>,
     ) -> Self {

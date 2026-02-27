@@ -97,6 +97,92 @@ impl<F: JoltField> BooleanitySumcheck<F> {
         }
     }
 
+    /// Construct a prover instance from pre-extracted parts (no `StateManager`).
+    ///
+    /// * `gamma_powers` — `[1, γ, γ², ..., γ^(d-1)]`
+    /// * `r_address` — random challenge vector (length `log_K_chunk`)
+    /// * `log_T` — `log2(T)`
+    /// * `log_K_chunk` — `ceil(log_K / d)`
+    /// * `eq_r_cycle` — eq polynomial evaluations at `r_cycle`
+    /// * `G` — d arrays of `eq(r_cycle, j) * [chunk_i == k]`
+    /// * `trace`, `preprocessing` — for computing `pc_by_cycle`
+    pub fn new_prover_from_parts(
+        gamma_powers: Vec<F>,
+        r_address: Vec<F::Challenge>,
+        log_T: usize,
+        log_K_chunk: usize,
+        eq_r_cycle: Vec<F>,
+        G: Vec<Vec<F>>,
+        trace: &[Cycle],
+        preprocessing: &BytecodePreprocessing,
+    ) -> Self {
+        let d = gamma_powers.len();
+        Self {
+            gamma: gamma_powers,
+            prover_state: Some(BooleanityProverState::new(
+                trace,
+                preprocessing,
+                eq_r_cycle,
+                G,
+                &r_address,
+                d,
+            )),
+            d,
+            log_T,
+            log_K_chunk,
+            r_address,
+        }
+    }
+
+    /// Like `new_prover_from_parts` but accepts pre-computed PC indices instead of `&[Cycle]`.
+    ///
+    /// `pc_indices[t]` is the bytecode table index for cycle `t`
+    /// (i.e., the value returned by `BytecodePreprocessing::get_pc`).
+    pub fn new_prover_from_pc_indices(
+        gamma_powers: Vec<F>,
+        r_address: Vec<F::Challenge>,
+        log_T: usize,
+        log_K_chunk: usize,
+        eq_r_cycle: Vec<F>,
+        G: Vec<Vec<F>>,
+        pc_indices: &[u64],
+    ) -> Self {
+        let d = gamma_powers.len();
+        Self {
+            gamma: gamma_powers,
+            prover_state: Some(BooleanityProverState::new_from_pc_indices(
+                pc_indices,
+                eq_r_cycle,
+                G,
+                &r_address,
+                d,
+                log_K_chunk,
+            )),
+            d,
+            log_T,
+            log_K_chunk,
+            r_address,
+        }
+    }
+
+    /// Construct a verifier-like instance from pre-extracted parts (no `StateManager`).
+    pub fn new_verifier_from_parts(
+        gamma_powers: Vec<F>,
+        r_address: Vec<F::Challenge>,
+        log_T: usize,
+        log_K_chunk: usize,
+    ) -> Self {
+        let d = gamma_powers.len();
+        Self {
+            gamma: gamma_powers,
+            prover_state: None,
+            log_T,
+            log_K_chunk,
+            r_address,
+            d,
+        }
+    }
+
     pub fn new_verifier(
         sm: &mut StateManager<F, impl Transcript, impl CommitmentScheme<Field = F>>,
     ) -> Self {
@@ -176,6 +262,46 @@ impl<F: JoltField> BooleanityProverState<F> {
                     .map(|cycle| {
                         let k = preprocessing.get_pc(cycle);
                         Some(((k >> (log_K_chunk * (d - i - 1))) % K_chunk) as u8)
+                    })
+                    .collect()
+            })
+            .collect();
+        let D = MultilinearPolynomial::from(eq_r_cycle);
+
+        BooleanityProverState {
+            B,
+            D,
+            H: vec![RaPolynomial::None; d],
+            G,
+            F: F_vec,
+            eq_r_r: F::zero(),
+            pc_by_cycle,
+        }
+    }
+
+    /// Like `new` but uses pre-computed PC indices instead of `&[Cycle]`.
+    fn new_from_pc_indices(
+        pc_indices: &[u64],
+        eq_r_cycle: Vec<F>,
+        G: Vec<Vec<F>>,
+        r_address: &[F::Challenge],
+        d: usize,
+        log_K_chunk: usize,
+    ) -> Self {
+        let K_chunk = 1 << log_K_chunk;
+        let log_K = d * log_K_chunk;
+        let B = MultilinearPolynomial::from(EqPolynomial::<F>::evals(r_address));
+
+        let mut F_vec: Vec<F> = unsafe_allocate_zero_vec(log_K.pow2());
+        F_vec[0] = F::one();
+
+        let pc_by_cycle = (0..d)
+            .into_par_iter()
+            .map(|i| {
+                pc_indices
+                    .par_iter()
+                    .map(|&k| {
+                        Some(((k as usize >> (log_K_chunk * (d - i - 1))) % K_chunk) as u8)
                     })
                     .collect()
             })

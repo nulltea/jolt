@@ -293,7 +293,7 @@ where
     prover_state: Option<ProverOpening<F>>,
     /// Represents the polynomial(s) opened. May be a random linear combination
     /// of multiple polynomials, all being opened at the same point.
-    polynomials: Vec<CommittedPolynomial>,
+    pub polynomials: Vec<CommittedPolynomial>,
     /// The ID of the sumcheck these openings originated from
     sumcheck_id: SumcheckId,
     rlc_coeffs: Vec<F>,
@@ -603,7 +603,7 @@ pub struct ReducedOpeningProof<
 > {
     pub sumcheck_proof: SumcheckInstanceProof<F, ProofTranscript>,
     pub sumcheck_claims: Vec<F>,
-    joint_opening_proof: PCS::Proof,
+    pub joint_opening_proof: PCS::Proof,
     #[cfg(test)]
     joint_poly: MultilinearPolynomial<F>,
     #[cfg(test)]

@@ -61,6 +61,8 @@ struct ReadRafProverState<F: JoltField> {
     lookup_indices_uninterleave: Vec<(usize, LookupBits)>,
     lookup_indices_identity: Vec<(usize, LookupBits)>,
     is_interleaved_operands: Vec<bool>,
+    /// True for NoOp padding cycles — excluded from condensation and operand eval.
+    is_noop: Vec<bool>,
     #[allocative(skip)]
     lookup_tables: Vec<Option<LookupTables<XLEN>>>,
 
@@ -178,6 +180,7 @@ impl<'a, F: JoltField> ReadRafProverState<F> {
             lookup_index: LookupBits,
             is_interleaved: bool,
             table: Option<LookupTables<XLEN>>,
+            is_noop: bool,
         }
 
         let cycle_data: Vec<CycleData<XLEN>> = trace
@@ -190,12 +193,14 @@ impl<'a, F: JoltField> ReadRafProverState<F> {
                     .circuit_flags()
                     .is_interleaved_operands();
                 let table = cycle.lookup_table();
+                let is_noop = matches!(cycle, Cycle::NoOp);
 
                 CycleData {
                     idx,
                     lookup_index: bits,
                     is_interleaved,
                     table,
+                    is_noop,
                 }
             })
             .collect();
@@ -212,16 +217,21 @@ impl<'a, F: JoltField> ReadRafProverState<F> {
         lookup_indices.par_extend(cycle_data.par_iter().map(|data| data.lookup_index));
         is_interleaved_operands.par_extend(cycle_data.par_iter().map(|data| data.is_interleaved));
         lookup_tables.par_extend(cycle_data.par_iter().map(|data| data.table));
+        let mut is_noop = Vec::with_capacity(cycle_data.len());
+        is_noop.par_extend(cycle_data.par_iter().map(|data| data.is_noop));
 
-        // Collect interleaved and identity indices
+        // Collect interleaved and identity indices (skip NoOp padding)
         let (lookup_indices_uninterleave, lookup_indices_identity): (Vec<_>, Vec<_>) =
-            cycle_data.par_iter().partition_map(|data| {
-                if data.is_interleaved {
-                    rayon::iter::Either::Left((data.idx, data.lookup_index))
-                } else {
-                    rayon::iter::Either::Right((data.idx, data.lookup_index))
-                }
-            });
+            cycle_data
+                .par_iter()
+                .filter(|data| !data.is_noop)
+                .partition_map(|data| {
+                    if data.is_interleaved {
+                        rayon::iter::Either::Left((data.idx, data.lookup_index))
+                    } else {
+                        rayon::iter::Either::Right((data.idx, data.lookup_index))
+                    }
+                });
 
         // Build lookup_indices_by_table fully in parallel
         // Create a vector for each table in parallel
@@ -260,10 +270,15 @@ impl<'a, F: JoltField> ReadRafProverState<F> {
 
         let span = tracing::span!(tracing::Level::INFO, "Init u_evals");
         let _guard = span.enter();
-        // Parallel clone of eq_r_cycle
+        // Parallel clone of eq_r_cycle, zeroing out NoOp padding cycles
         let u_evals = {
             let mut result = Vec::with_capacity(eq_r_cycle.len());
-            result.par_extend(eq_r_cycle.par_iter().copied());
+            result.par_extend(
+                eq_r_cycle
+                    .par_iter()
+                    .zip(is_noop.par_iter())
+                    .map(|(&e, &noop)| if noop { F::zero() } else { e }),
+            );
             result
         };
         drop(_guard);
@@ -279,6 +294,7 @@ impl<'a, F: JoltField> ReadRafProverState<F> {
             lookup_indices_uninterleave,
             lookup_indices_identity,
             is_interleaved_operands,
+            is_noop,
             prefix_checkpoints: vec![None.into(); Prefixes::COUNT],
             suffix_polys,
             v: ExpandingTable::new(M),
@@ -704,7 +720,11 @@ impl<F: JoltField> ReadRafProverState<F> {
             let ra = self
                 .lookup_indices
                 .par_iter()
-                .map(|k| {
+                .zip(self.is_noop.par_iter())
+                .map(|(k, &noop)| {
+                    if noop {
+                        return F::zero();
+                    }
                     let (prefix, _) = k.split((PHASES - 1 - phase) * LOG_M);
                     let k_bound: usize = prefix % M;
                     self.v[k_bound]

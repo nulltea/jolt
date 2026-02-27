@@ -119,6 +119,44 @@ impl<F: JoltField> HammingWeightSumcheck<F> {
         }
     }
 
+    /// Construct a prover instance from pre-extracted parts (no `StateManager`).
+    ///
+    /// `gamma_powers`: `[1, γ, γ², ..., γ^(d-1)]`
+    /// `input_claim`: the batched input claim
+    /// `F_arrays`: d arrays of size `DTH_ROOT_OF_K`, each the eq-weighted histogram
+    ///             of address chunk `i` over the trace.
+    pub fn new_prover_from_parts(
+        gamma_powers: Vec<F>,
+        input_claim: F,
+        F_arrays: Vec<Vec<F>>,
+    ) -> Self {
+        let d = gamma_powers.len();
+        let ra: Vec<MultilinearPolynomial<F>> = F_arrays
+            .into_iter()
+            .map(MultilinearPolynomial::from)
+            .collect();
+        Self {
+            input_claim,
+            d,
+            gamma_powers,
+            prover_state: Some(HammingWeightProverState { ra }),
+        }
+    }
+
+    /// Construct a verifier-like instance from pre-extracted parts (no `StateManager`).
+    pub fn new_verifier_from_parts(
+        gamma_powers: Vec<F>,
+        input_claim: F,
+    ) -> Self {
+        let d = gamma_powers.len();
+        Self {
+            input_claim,
+            d,
+            gamma_powers,
+            prover_state: None,
+        }
+    }
+
     pub fn new_verifier<ProofTranscript: Transcript, PCS: CommitmentScheme<Field = F>>(
         state_manager: &mut StateManager<'_, F, ProofTranscript, PCS>,
     ) -> Self {

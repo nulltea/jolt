@@ -71,7 +71,7 @@ pub struct ReadRafSumcheck<F: JoltField> {
 }
 
 #[derive(Debug, Clone, Copy)]
-enum ReadCheckingValType {
+pub enum ReadCheckingValType {
     /// Spartan outer sumcheck
     Stage1,
     /// Registers read-write sumcheck
@@ -214,6 +214,120 @@ impl<F: JoltField> ReadRafSumcheck<F> {
         }
     }
 
+    /// Construct a prover instance from pre-extracted parts (no `StateManager`).
+    ///
+    /// * `gamma` — the scalar challenge (raw, not powered)
+    /// * `rv_claim` — the combined input claim
+    /// * `log_K`, `log_T`, `d` — bytecode parameters
+    /// * `val_polys` — 3 precomputed val polynomials
+    /// * `r_cycles` — 3 cycle challenge vectors (from accumulator)
+    /// * `trace`, `preprocessing` — for computing F arrays and pc indices
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_prover_from_parts(
+        gamma: F,
+        rv_claim: F,
+        log_K: usize,
+        log_T: usize,
+        d: usize,
+        val_polys: [Vec<F>; STAGES],
+        r_cycles: [Vec<F::Challenge>; STAGES],
+        pc: Vec<usize>,
+        F_polys: [Vec<F>; STAGES],
+    ) -> Self {
+        let log_K_chunk = log_K.div_ceil(d);
+        let K_chunk = 1 << log_K_chunk;
+        let K = 1 << log_K;
+        let gamma_sqr = gamma.square();
+        let gamma_cub = gamma_sqr * gamma;
+
+        let eq_evals = [
+            EqPolynomial::evals(&r_cycles[0]),
+            EqPolynomial::evals(&r_cycles[1]),
+            EqPolynomial::evals(&r_cycles[2]),
+        ];
+
+        let eq_polys = eq_evals
+            .into_iter()
+            .map(MultilinearPolynomial::from)
+            .collect::<Vec<_>>()
+            .try_into()
+            .unwrap();
+
+        let F_mlps = [
+            MultilinearPolynomial::from(F_polys[0].clone()),
+            MultilinearPolynomial::from(F_polys[1].clone()),
+            MultilinearPolynomial::from(F_polys[2].clone()),
+        ];
+
+        let mut v = (0..d)
+            .map(|_| ExpandingTable::new(K_chunk))
+            .collect::<Vec<_>>();
+        v.par_iter_mut().for_each(|v| v.reset(F::one()));
+
+        let int_poly = IdentityPolynomial::<F>::new(log_K);
+
+        Self {
+            rv_claim,
+            log_K,
+            log_K_chunk,
+            K_chunk,
+            d,
+            log_T,
+            prover_state: Some(ReadCheckingProverState {
+                F: F_mlps,
+                ra: Vec::with_capacity(d),
+                v,
+                eq_polys,
+                val_gamma: None,
+                pc,
+            }),
+            val_polys: [
+                MultilinearPolynomial::from(val_polys[0].clone()),
+                MultilinearPolynomial::from(val_polys[1].clone()),
+                MultilinearPolynomial::from(val_polys[2].clone()),
+            ],
+            int_poly,
+            gamma: [F::one(), gamma, gamma_sqr],
+            gamma_sqr,
+            gamma_cub,
+        }
+    }
+
+    /// Construct a verifier-like instance from pre-extracted parts (no `StateManager`).
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_verifier_from_parts(
+        gamma: F,
+        rv_claim: F,
+        log_K: usize,
+        log_T: usize,
+        d: usize,
+        val_polys: [Vec<F>; STAGES],
+    ) -> Self {
+        let log_K_chunk = log_K.div_ceil(d);
+        let gamma_sqr = gamma.square();
+        let gamma_cub = gamma_sqr * gamma;
+        let int_poly = IdentityPolynomial::new(log_K);
+
+        Self {
+            gamma: [F::one(), gamma, gamma_sqr],
+            gamma_sqr,
+            gamma_cub,
+            rv_claim,
+            log_K,
+            log_K_chunk,
+            K_chunk: 1 << log_K_chunk,
+            d,
+            log_T,
+            prover_state: None,
+            val_polys: [
+                MultilinearPolynomial::from(val_polys[0].clone()),
+                MultilinearPolynomial::from(val_polys[1].clone()),
+                MultilinearPolynomial::from(val_polys[2].clone()),
+            ],
+            int_poly,
+        }
+    }
+
     pub fn new_verifier(
         sm: &mut StateManager<F, impl Transcript, impl CommitmentScheme<Field = F>>,
     ) -> Self {
@@ -264,7 +378,7 @@ impl<F: JoltField> ReadRafSumcheck<F> {
         }
     }
 
-    fn compute_val_rv(
+    pub fn compute_val_rv(
         sm: &mut StateManager<F, impl Transcript, impl CommitmentScheme<Field = F>>,
         val_type: ReadCheckingValType,
     ) -> (Vec<F>, F) {
@@ -299,7 +413,7 @@ impl<F: JoltField> ReadRafSumcheck<F> {
         }
     }
 
-    fn get_r_cycle(acc: &Rc<RefCell<ProverOpeningAccumulator<F>>>) -> [Vec<F::Challenge>; STAGES] {
+    pub fn get_r_cycle(acc: &Rc<RefCell<ProverOpeningAccumulator<F>>>) -> [Vec<F::Challenge>; STAGES] {
         let (r_cycle_1, _) = acc
             .borrow()
             .get_virtual_polynomial_opening(VirtualPolynomial::Imm, SumcheckId::SpartanOuter);
@@ -316,7 +430,7 @@ impl<F: JoltField> ReadRafSumcheck<F> {
         [r_cycle_1.r, r_cycle_2.r, r_cycle_3.r]
     }
 
-    fn get_r_cycle_verif(
+    pub fn get_r_cycle_verif(
         acc: &Rc<RefCell<VerifierOpeningAccumulator<F>>>,
     ) -> [Vec<F::Challenge>; STAGES] {
         let (r_cycle_1, _) = acc
@@ -339,7 +453,7 @@ impl<F: JoltField> ReadRafSumcheck<F> {
     ///    Val(k) = unexpanded_pc(k) + gamma * imm(k)
     ///             + gamma^2 * circuit_flags[0](k) + gamma^3 * circuit_flags[1](k) + ...
     /// This particular Val virtualizes claims output by Spartan's "outer" sumcheck
-    fn compute_val_1(
+    pub fn compute_val_1(
         sm: &mut StateManager<F, impl Transcript, impl CommitmentScheme<Field = F>>,
         gamma_powers: &[F],
     ) -> Vec<F> {
@@ -373,7 +487,7 @@ impl<F: JoltField> ReadRafSumcheck<F> {
             .collect()
     }
 
-    fn compute_rv_claim_1(
+    pub fn compute_rv_claim_1(
         sm: &mut StateManager<F, impl Transcript, impl CommitmentScheme<Field = F>>,
         gamma_powers: &[F],
     ) -> F {
@@ -405,7 +519,7 @@ impl<F: JoltField> ReadRafSumcheck<F> {
     /// where rd(k, k') = 1 if the k'th instruction in the bytecode has rd = k'
     /// and analogously for rs1(k, k') and rs2(k, k').
     /// This particular Val virtualizes claims output by the registers read/write checking sumcheck.
-    fn compute_val_2(
+    pub fn compute_val_2(
         sm: &mut StateManager<F, impl Transcript, impl CommitmentScheme<Field = F>>,
         gamma_powers: &[F],
     ) -> Vec<F> {
@@ -436,7 +550,7 @@ impl<F: JoltField> ReadRafSumcheck<F> {
             .collect()
     }
 
-    fn compute_rv_claim_2(
+    pub fn compute_rv_claim_2(
         sm: &mut StateManager<F, impl Transcript, impl CommitmentScheme<Field = F>>,
         gamma_powers: &[F],
     ) -> F {
@@ -460,7 +574,7 @@ impl<F: JoltField> ReadRafSumcheck<F> {
     /// where rd(k, k') = 1 if the k'th instruction in the bytecode has rd = k'
     /// This particular Val virtualizes claims output by the PCSumcheck,
     /// the registers val-evaluation sumcheck, and the instruction lookups sumcheck.
-    fn compute_val_3(
+    pub fn compute_val_3(
         sm: &mut StateManager<F, impl Transcript, impl CommitmentScheme<Field = F>>,
         gamma_powers: &[F],
     ) -> Vec<F> {
@@ -502,7 +616,7 @@ impl<F: JoltField> ReadRafSumcheck<F> {
             .collect()
     }
 
-    fn compute_rv_claim_3(
+    pub fn compute_rv_claim_3(
         sm: &mut StateManager<F, impl Transcript, impl CommitmentScheme<Field = F>>,
         gamma_powers: &[F],
     ) -> F {
@@ -537,6 +651,97 @@ impl<F: JoltField> ReadRafSumcheck<F> {
             .zip(gamma_powers)
             .map(|(claim, gamma)| claim * gamma)
             .sum()
+    }
+
+    /// Like `compute_val_1` but takes `&[Instruction]` directly instead of `StateManager`.
+    pub fn compute_val_1_from_bytecode(
+        bytecode: &[tracer::instruction::Instruction],
+        gamma_powers: &[F],
+    ) -> Vec<F> {
+        bytecode
+            .par_iter()
+            .map(|instruction| {
+                let NormalizedInstruction {
+                    address: unexpanded_pc,
+                    operands,
+                    ..
+                } = instruction.normalize();
+
+                let mut linear_combination = F::zero();
+                linear_combination += F::from_u64(unexpanded_pc as u64);
+                linear_combination += operands.imm.field_mul(gamma_powers[1]);
+                linear_combination += (operands.rd as u64).field_mul(gamma_powers[2]);
+                let flags = instruction.circuit_flags();
+                assert!(
+                    !flags[CircuitFlags::IsCompressed]
+                        || !flags[CircuitFlags::DoNotUpdateUnexpandedPC]
+                );
+                for (flag, gamma_power) in flags.iter().zip(gamma_powers[3..].iter()) {
+                    if *flag {
+                        linear_combination += *gamma_power;
+                    }
+                }
+
+                linear_combination
+            })
+            .collect()
+    }
+
+    /// Like `compute_val_2` but takes `&[Instruction]` and `eq_r_register` directly.
+    pub fn compute_val_2_from_bytecode(
+        bytecode: &[tracer::instruction::Instruction],
+        gamma_powers: &[F],
+        eq_r_register: &[F],
+    ) -> Vec<F> {
+        bytecode
+            .par_iter()
+            .map(|instruction| {
+                let instr = instruction.normalize();
+
+                std::iter::empty()
+                    .chain(once(instr.operands.rd))
+                    .chain(once(instr.operands.rs1))
+                    .chain(once(instr.operands.rs2))
+                    .map(|r| eq_r_register[r as usize])
+                    .zip(gamma_powers)
+                    .map(|(claim, gamma)| claim * gamma)
+                    .sum::<F>()
+            })
+            .collect()
+    }
+
+    /// Like `compute_val_3` but takes `&[Instruction]` and `eq_r_register` directly.
+    pub fn compute_val_3_from_bytecode(
+        bytecode: &[tracer::instruction::Instruction],
+        gamma_powers: &[F],
+        eq_r_register: &[F],
+    ) -> Vec<F> {
+        bytecode
+            .par_iter()
+            .map(|instruction| {
+                let instr = instruction.normalize();
+                let flags = instruction.circuit_flags();
+                let unexpanded_pc = instr.address;
+
+                let mut linear_combination: F = F::zero();
+
+                linear_combination += eq_r_register[instr.operands.rd as usize];
+                linear_combination += gamma_powers[1].mul_u64(unexpanded_pc as u64);
+                if flags[CircuitFlags::IsNoop] {
+                    linear_combination += gamma_powers[2];
+                }
+                if !flags.is_interleaved_operands() {
+                    linear_combination += gamma_powers[3];
+                }
+
+                if let Some(table) = instruction.lookup_table() {
+                    let table_index = LookupTables::enum_index(&table);
+                    linear_combination += gamma_powers[4 + table_index];
+                }
+
+                linear_combination
+            })
+            .collect()
     }
 }
 
@@ -933,7 +1138,7 @@ impl<F: JoltField> ReadRafSumcheck<F> {
     }
 }
 
-fn get_gamma_powers<F: JoltField>(transcript: &mut impl Transcript, amount: usize) -> Vec<F> {
+pub fn get_gamma_powers<F: JoltField>(transcript: &mut impl Transcript, amount: usize) -> Vec<F> {
     let mut gamma_powers = vec![F::one()];
     let gamma: F = transcript.challenge_scalar();
     for _ in 1..amount {

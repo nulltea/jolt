@@ -25,6 +25,7 @@ use allocative::Allocative;
 use common::constants::XLEN;
 use itertools::chain;
 use rayon::prelude::*;
+use tracer::instruction::Cycle;
 
 #[derive(Allocative)]
 pub struct RaSumcheck<F: JoltField> {
@@ -58,6 +59,9 @@ impl<F: JoltField> RaSumcheck<F> {
             trace
                 .par_iter()
                 .map(|cycle| {
+                    if matches!(cycle, Cycle::NoOp) {
+                        return None;
+                    }
                     let lookup_index = LookupQuery::<XLEN>::to_lookup_index(cycle);
                     Some(((lookup_index >> (LOG_K_CHUNK * (D - 1 - i))) % K_CHUNK as u128) as u8)
                 })

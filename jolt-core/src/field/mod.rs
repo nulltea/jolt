@@ -108,6 +108,7 @@ pub trait JoltField:
     // + Into<BigUint>
     + From<BigUint>
     + UniformRand
+    + From<u128>
     + From<u64>
 {
     /// Number of bytes occupied by a single field element.

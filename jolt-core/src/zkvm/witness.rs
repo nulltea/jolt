@@ -338,12 +338,14 @@ impl CommittedPolynomial {
                 };
                 batch_ref.ram_inc[i] = ram_inc;
 
-                // InstructionRa indices
-                let lookup_index = LookupQuery::<XLEN>::to_lookup_index(cycle);
-                for j in 0..instruction_lookups::D {
-                    let k = (lookup_index >> instruction_ra_shifts[j])
-                        % instruction_lookups::K_CHUNK as u128;
-                    batch_ref.instruction_ra[j][i] = Some(k as u8);
+                // InstructionRa indices (skip NoOp padding — leave as None)
+                if !matches!(cycle, Cycle::NoOp) {
+                    let lookup_index = LookupQuery::<XLEN>::to_lookup_index(cycle);
+                    for j in 0..instruction_lookups::D {
+                        let k = (lookup_index >> instruction_ra_shifts[j])
+                            % instruction_lookups::K_CHUNK as u128;
+                        batch_ref.instruction_ra[j][i] = Some(k as u8);
+                    }
                 }
 
                 // BytecodeRa indices

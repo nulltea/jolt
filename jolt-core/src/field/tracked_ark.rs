@@ -521,6 +521,12 @@ impl From<u64> for TrackedFr {
     }
 }
 
+impl From<u128> for TrackedFr {
+    fn from(value: u128) -> Self {
+        TrackedFr(Fr::from(value))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(clippy::op_ref)]

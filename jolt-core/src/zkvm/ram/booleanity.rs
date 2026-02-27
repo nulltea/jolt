@@ -167,6 +167,73 @@ impl<F: JoltField> BooleanitySumcheck<F> {
         }
     }
 
+    /// Construct a prover instance from pre-extracted parts (no `StateManager`).
+    ///
+    /// * `d` — number of decomposition parts
+    /// * `T` — trace length
+    /// * `K` — RAM address space size
+    /// * `r_cycle` — random challenge vector (length `log(T)`)
+    /// * `r_address` — random challenge vector (length `log(DTH_ROOT_OF_K)`)
+    /// * `gamma_powers` — `[1, γ, γ², ..., γ^(d-1)]`
+    /// * `G_arrays` — d arrays of size `DTH_ROOT_OF_K`, each the eq-weighted histogram
+    /// * `addresses` — per-cycle remapped addresses (`None` for unmapped cycles)
+    pub fn new_prover_from_parts(
+        d: usize,
+        T: usize,
+        K: usize,
+        r_cycle: Vec<F::Challenge>,
+        r_address: Vec<F::Challenge>,
+        gamma_powers: Vec<F>,
+        G_arrays: Vec<Vec<F>>,
+        addresses: Vec<Option<u64>>,
+    ) -> Self {
+        let B = GruenSplitEqPolynomial::new(&r_address, BindingOrder::LowToHigh);
+        let D = GruenSplitEqPolynomial::new(&r_cycle, BindingOrder::LowToHigh);
+
+        let mut F_vec: Vec<F> = unsafe_allocate_zero_vec(K);
+        F_vec[0] = F::one();
+
+        let prover_state = BooleanityProverState {
+            B,
+            F: F_vec,
+            G: G_arrays,
+            D,
+            H: vec![],
+            eq_r_r: F::zero(),
+        };
+
+        BooleanitySumcheck {
+            T,
+            d,
+            r_address,
+            r_cycle,
+            gamma_powers,
+            prover_state: Some(prover_state),
+            current_round: 0,
+            addresses,
+        }
+    }
+
+    /// Construct a verifier-like instance from pre-extracted parts (no `StateManager`).
+    pub fn new_verifier_from_parts(
+        d: usize,
+        T: usize,
+        r_cycle: Vec<F::Challenge>,
+        r_address: Vec<F::Challenge>,
+        gamma_powers: Vec<F>,
+    ) -> Self {
+        BooleanitySumcheck {
+            T,
+            d,
+            r_address,
+            r_cycle,
+            gamma_powers,
+            prover_state: None,
+            current_round: 0,
+            addresses: vec![],
+        }
+    }
+
     pub fn new_verifier<ProofTranscript: Transcript, PCS: CommitmentScheme<Field = F>>(
         state_manager: &mut StateManager<'_, F, ProofTranscript, PCS>,
     ) -> Self {

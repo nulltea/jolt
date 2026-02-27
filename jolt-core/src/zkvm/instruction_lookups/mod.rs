@@ -157,11 +157,13 @@ fn compute_ra_evals<F: JoltField>(trace: &[Cycle], eq_r_cycle: &[F]) -> [Vec<F>;
                 std::array::from_fn(|_| unsafe_allocate_zero_vec(K_CHUNK));
             let mut j = chunk_index * chunk_size;
             for cycle in trace_chunk {
-                let mut lookup_index = LookupQuery::<XLEN>::to_lookup_index(cycle);
-                for i in (0..D).rev() {
-                    let k = lookup_index % K_CHUNK as u128;
-                    result[i][k as usize] += eq_r_cycle[j];
-                    lookup_index >>= LOG_K_CHUNK;
+                if !matches!(cycle, Cycle::NoOp) {
+                    let mut lookup_index = LookupQuery::<XLEN>::to_lookup_index(cycle);
+                    for i in (0..D).rev() {
+                        let k = lookup_index % K_CHUNK as u128;
+                        result[i][k as usize] += eq_r_cycle[j];
+                        lookup_index >>= LOG_K_CHUNK;
+                    }
                 }
                 j += 1;
             }

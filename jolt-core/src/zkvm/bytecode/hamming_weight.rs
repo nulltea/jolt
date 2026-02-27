@@ -64,6 +64,39 @@ impl<F: JoltField> HammingWeightSumcheck<F> {
         }
     }
 
+    /// Construct a prover instance from pre-extracted parts (no `StateManager`).
+    pub fn new_prover_from_parts(
+        gamma_powers: Vec<F>,
+        log_K_chunk: usize,
+        F_arrays: Vec<Vec<F>>,
+    ) -> Self {
+        let d = gamma_powers.len();
+        let ra = F_arrays
+            .into_iter()
+            .map(MultilinearPolynomial::from)
+            .collect::<Vec<_>>();
+        Self {
+            gamma: gamma_powers,
+            log_K_chunk,
+            d,
+            prover_state: Some(HammingWeightProverState { ra }),
+        }
+    }
+
+    /// Construct a verifier-like instance from pre-extracted parts (no `StateManager`).
+    pub fn new_verifier_from_parts(
+        gamma_powers: Vec<F>,
+        log_K_chunk: usize,
+    ) -> Self {
+        let d = gamma_powers.len();
+        Self {
+            gamma: gamma_powers,
+            log_K_chunk,
+            d,
+            prover_state: None,
+        }
+    }
+
     pub fn new_verifier(
         sm: &mut StateManager<F, impl Transcript, impl CommitmentScheme<Field = F>>,
     ) -> Self {
