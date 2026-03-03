@@ -767,7 +767,7 @@ impl<F: JoltField, T: Transcript> SumcheckInstance<F, T> for ReadRafSumcheck<F> 
         if round < self.log_K {
             const DEGREE: usize = 2;
 
-            (0..self.val_polys[0].len() / 2)
+            let result: Vec<F> = (0..self.val_polys[0].len() / 2)
                 .into_par_iter()
                 .map(|i| {
                     let ra_evals = ps.F.iter().map(|poly| {
@@ -829,7 +829,8 @@ impl<F: JoltField, T: Transcript> SumcheckInstance<F, T> for ReadRafSumcheck<F> 
                 )
                 .into_iter()
                 .map(F::from_montgomery_reduce)
-                .collect()
+                .collect();
+            result
         } else {
             let degree = <Self as SumcheckInstance<F, T>>::degree(self);
             (0..ps.ra[0].len() / 2)

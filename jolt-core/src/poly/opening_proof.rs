@@ -887,7 +887,6 @@ where
 
         drop(_enter);
 
-        // Use sumcheck reduce many openings to one
         let (sumcheck_proof, r_sumcheck, sumcheck_claims) =
             self.prove_batch_opening_reduction(transcript);
 
