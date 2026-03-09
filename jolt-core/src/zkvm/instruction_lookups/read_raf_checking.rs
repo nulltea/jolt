@@ -61,8 +61,6 @@ struct ReadRafProverState<F: JoltField> {
     lookup_indices_uninterleave: Vec<(usize, LookupBits)>,
     lookup_indices_identity: Vec<(usize, LookupBits)>,
     is_interleaved_operands: Vec<bool>,
-    /// True for NoOp padding cycles — excluded from condensation and operand eval.
-    is_noop: Vec<bool>,
     #[allocative(skip)]
     lookup_tables: Vec<Option<LookupTables<XLEN>>>,
 
@@ -180,7 +178,6 @@ impl<'a, F: JoltField> ReadRafProverState<F> {
             lookup_index: LookupBits,
             is_interleaved: bool,
             table: Option<LookupTables<XLEN>>,
-            is_noop: bool,
         }
 
         let cycle_data: Vec<CycleData<XLEN>> = trace
@@ -193,14 +190,12 @@ impl<'a, F: JoltField> ReadRafProverState<F> {
                     .circuit_flags()
                     .is_interleaved_operands();
                 let table = cycle.lookup_table();
-                let is_noop = matches!(cycle, Cycle::NoOp);
 
                 CycleData {
                     idx,
                     lookup_index: bits,
                     is_interleaved,
                     table,
-                    is_noop,
                 }
             })
             .collect();
@@ -217,21 +212,16 @@ impl<'a, F: JoltField> ReadRafProverState<F> {
         lookup_indices.par_extend(cycle_data.par_iter().map(|data| data.lookup_index));
         is_interleaved_operands.par_extend(cycle_data.par_iter().map(|data| data.is_interleaved));
         lookup_tables.par_extend(cycle_data.par_iter().map(|data| data.table));
-        let mut is_noop = Vec::with_capacity(cycle_data.len());
-        is_noop.par_extend(cycle_data.par_iter().map(|data| data.is_noop));
 
-        // Collect interleaved and identity indices (skip NoOp padding)
+        // Collect interleaved and identity indices
         let (lookup_indices_uninterleave, lookup_indices_identity): (Vec<_>, Vec<_>) =
-            cycle_data
-                .par_iter()
-                .filter(|data| !data.is_noop)
-                .partition_map(|data| {
-                    if data.is_interleaved {
-                        rayon::iter::Either::Left((data.idx, data.lookup_index))
-                    } else {
-                        rayon::iter::Either::Right((data.idx, data.lookup_index))
-                    }
-                });
+            cycle_data.par_iter().partition_map(|data| {
+                if data.is_interleaved {
+                    rayon::iter::Either::Left((data.idx, data.lookup_index))
+                } else {
+                    rayon::iter::Either::Right((data.idx, data.lookup_index))
+                }
+            });
 
         // Build lookup_indices_by_table fully in parallel
         // Create a vector for each table in parallel
@@ -270,15 +260,10 @@ impl<'a, F: JoltField> ReadRafProverState<F> {
 
         let span = tracing::span!(tracing::Level::INFO, "Init u_evals");
         let _guard = span.enter();
-        // Parallel clone of eq_r_cycle, zeroing out NoOp padding cycles
+        // Parallel clone of eq_r_cycle
         let u_evals = {
             let mut result = Vec::with_capacity(eq_r_cycle.len());
-            result.par_extend(
-                eq_r_cycle
-                    .par_iter()
-                    .zip(is_noop.par_iter())
-                    .map(|(&e, &noop)| if noop { F::zero() } else { e }),
-            );
+            result.par_extend(eq_r_cycle.par_iter().copied());
             result
         };
         drop(_guard);
@@ -294,7 +279,6 @@ impl<'a, F: JoltField> ReadRafProverState<F> {
             lookup_indices_uninterleave,
             lookup_indices_identity,
             is_interleaved_operands,
-            is_noop,
             prefix_checkpoints: vec![None.into(); Prefixes::COUNT],
             suffix_polys,
             v: ExpandingTable::new(M),
@@ -720,11 +704,7 @@ impl<F: JoltField> ReadRafProverState<F> {
             let ra = self
                 .lookup_indices
                 .par_iter()
-                .zip(self.is_noop.par_iter())
-                .map(|(k, &noop)| {
-                    if noop {
-                        return F::zero();
-                    }
+                .map(|k| {
                     let (prefix, _) = k.split((PHASES - 1 - phase) * LOG_M);
                     let k_bound: usize = prefix % M;
                     self.v[k_bound]
@@ -973,6 +953,7 @@ mod tests {
             Cycle::JAL(cycle) => cycle.random(rng).into(),
             Cycle::JALR(cycle) => cycle.random(rng).into(),
             Cycle::LUI(cycle) => cycle.random(rng).into(),
+            #[cfg(feature = "rv64")]
             Cycle::LD(cycle) => cycle.random(rng).into(),
             Cycle::MUL(cycle) => cycle.random(rng).into(),
             Cycle::MULHU(cycle) => cycle.random(rng).into(),
@@ -983,6 +964,7 @@ mod tests {
             Cycle::SLTIU(cycle) => cycle.random(rng).into(),
             Cycle::SLTU(cycle) => cycle.random(rng).into(),
             Cycle::SUB(cycle) => cycle.random(rng).into(),
+            #[cfg(feature = "rv64")]
             Cycle::SD(cycle) => cycle.random(rng).into(),
             Cycle::XOR(cycle) => cycle.random(rng).into(),
             Cycle::XORI(cycle) => cycle.random(rng).into(),
@@ -998,20 +980,27 @@ mod tests {
             Cycle::VirtualMULI(cycle) => cycle.random(rng).into(),
             Cycle::VirtualPow2(cycle) => cycle.random(rng).into(),
             Cycle::VirtualPow2I(cycle) => cycle.random(rng).into(),
+            #[cfg(feature = "rv64")]
             Cycle::VirtualPow2W(cycle) => cycle.random(rng).into(),
+            #[cfg(feature = "rv64")]
             Cycle::VirtualPow2IW(cycle) => cycle.random(rng).into(),
             Cycle::VirtualShiftRightBitmask(cycle) => cycle.random(rng).into(),
             Cycle::VirtualShiftRightBitmaskI(cycle) => cycle.random(rng).into(),
             Cycle::VirtualSRA(cycle) => cycle.random(rng).into(),
+            #[cfg(feature = "rv64")]
             Cycle::VirtualRev8W(cycle) => cycle.random(rng).into(),
             Cycle::VirtualSRAI(cycle) => cycle.random(rng).into(),
             Cycle::VirtualSRL(cycle) => cycle.random(rng).into(),
             Cycle::VirtualSRLI(cycle) => cycle.random(rng).into(),
+            #[cfg(feature = "rv64")]
             Cycle::VirtualZeroExtendWord(cycle) => cycle.random(rng).into(),
+            #[cfg(feature = "rv64")]
             Cycle::VirtualSignExtendWord(cycle) => cycle.random(rng).into(),
             Cycle::VirtualROTRI(cycle) => cycle.random(rng).into(),
+            #[cfg(feature = "rv64")]
             Cycle::VirtualROTRIW(cycle) => cycle.random(rng).into(),
             Cycle::VirtualChangeDivisor(cycle) => cycle.random(rng).into(),
+            #[cfg(feature = "rv64")]
             Cycle::VirtualChangeDivisorW(cycle) => cycle.random(rng).into(),
             Cycle::VirtualAssertMulUNoOverflow(cycle) => cycle.random(rng).into(),
             _ => Cycle::NoOp,
@@ -1259,6 +1248,7 @@ mod tests {
         test_read_raf_sumcheck(Some(Cycle::LUI(Default::default())));
     }
 
+    #[cfg(feature = "rv64")]
     #[test]
     fn test_ld() {
         test_read_raf_sumcheck(Some(Cycle::LD(Default::default())));
@@ -1309,6 +1299,7 @@ mod tests {
         test_read_raf_sumcheck(Some(Cycle::SUB(Default::default())));
     }
 
+    #[cfg(feature = "rv64")]
     #[test]
     fn test_sd() {
         test_read_raf_sumcheck(Some(Cycle::SD(Default::default())));
@@ -1388,11 +1379,13 @@ mod tests {
         test_read_raf_sumcheck(Some(Cycle::VirtualPow2I(Default::default())));
     }
 
+    #[cfg(feature = "rv64")]
     #[test]
     fn test_pow2w() {
         test_read_raf_sumcheck(Some(Cycle::VirtualPow2W(Default::default())));
     }
 
+    #[cfg(feature = "rv64")]
     #[test]
     fn test_pow2iw() {
         test_read_raf_sumcheck(Some(Cycle::VirtualPow2IW(Default::default())));
@@ -1413,6 +1406,7 @@ mod tests {
         test_read_raf_sumcheck(Some(Cycle::VirtualROTRI(Default::default())));
     }
 
+    #[cfg(feature = "rv64")]
     #[test]
     fn test_virtualrotriw() {
         test_read_raf_sumcheck(Some(Cycle::VirtualROTRIW(Default::default())));
@@ -1428,6 +1422,7 @@ mod tests {
         test_read_raf_sumcheck(Some(Cycle::VirtualSRAI(Default::default())));
     }
 
+    #[cfg(feature = "rv64")]
     #[test]
     fn test_virtualrev8w() {
         test_read_raf_sumcheck(Some(Cycle::VirtualRev8W(Default::default())));
@@ -1443,11 +1438,13 @@ mod tests {
         test_read_raf_sumcheck(Some(Cycle::VirtualSRLI(Default::default())));
     }
 
+    #[cfg(feature = "rv64")]
     #[test]
     fn test_virtualextend() {
         test_read_raf_sumcheck(Some(Cycle::VirtualZeroExtendWord(Default::default())));
     }
 
+    #[cfg(feature = "rv64")]
     #[test]
     fn test_virtualsignextend() {
         test_read_raf_sumcheck(Some(Cycle::VirtualSignExtendWord(Default::default())));
@@ -1458,6 +1455,7 @@ mod tests {
         test_read_raf_sumcheck(Some(Cycle::VirtualChangeDivisor(Default::default())));
     }
 
+    #[cfg(feature = "rv64")]
     #[test]
     fn test_virtualchangedivisorw() {
         test_read_raf_sumcheck(Some(Cycle::VirtualChangeDivisorW(Default::default())));

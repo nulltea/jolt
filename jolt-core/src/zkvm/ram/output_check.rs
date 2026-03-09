@@ -490,9 +490,10 @@ impl<F: JoltField> ValFinalSumcheck<F> {
         let accumulator = state_manager.get_verifier_accumulator();
         let total_memory_vars = state_manager.ram_K.log_2();
 
+        let ws = common::constants::RAM_WORD_SIZE as usize;
         let untrusted_advice_contribution = super::calculate_advice_memory_evaluation(
             accumulator.borrow().get_untrusted_advice_opening(),
-            (program_io.memory_layout.max_untrusted_advice_size as usize / 8)
+            (program_io.memory_layout.max_untrusted_advice_size as usize / ws)
                 .next_power_of_two()
                 .log_2(),
             program_io.memory_layout.untrusted_advice_start,
@@ -503,7 +504,7 @@ impl<F: JoltField> ValFinalSumcheck<F> {
 
         let trusted_advice_contribution = super::calculate_advice_memory_evaluation(
             accumulator.borrow().get_trusted_advice_opening(),
-            (program_io.memory_layout.max_trusted_advice_size as usize / 8)
+            (program_io.memory_layout.max_trusted_advice_size as usize / ws)
                 .next_power_of_two()
                 .log_2(),
             program_io.memory_layout.trusted_advice_start,

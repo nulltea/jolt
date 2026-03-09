@@ -30,6 +30,7 @@ use crate::instruction::addi::ADDI;
 use crate::instruction::and::AND;
 use crate::instruction::andi::ANDI;
 use crate::instruction::srli::SRLI;
+#[cfg(feature = "rv64")]
 use crate::instruction::srliw::SRLIW;
 
 use crate::instruction::format::format_assert_align::AssertAlignFormat;
@@ -46,6 +47,7 @@ use crate::instruction::format::NormalizedOperands;
 
 use crate::emulator::cpu::Xlen;
 use crate::instruction::virtual_rotri::VirtualROTRI;
+#[cfg(feature = "rv64")]
 use crate::instruction::virtual_rotriw::VirtualROTRIW;
 use crate::instruction::xor::XOR;
 use crate::instruction::xori::XORI;
@@ -449,7 +451,10 @@ impl InstrAssembler {
             Reg(rs1) => {
                 match self.xlen {
                     Xlen::Bit32 => self.emit_i::<SRLI>(rd, rs1, shamt as u64),
+                    #[cfg(feature = "rv64")]
                     Xlen::Bit64 => self.emit_i::<SRLIW>(rd, rs1, (shamt & 0x1f) as u64),
+                    #[cfg(not(feature = "rv64"))]
+                    _ => unreachable!("RV64 not supported in rv32 build"),
                 }
                 Reg(rd)
             }
@@ -469,7 +474,10 @@ impl InstrAssembler {
             Reg(rs1_reg) => {
                 match self.xlen {
                     Xlen::Bit32 => self.emit_vshift_i::<VirtualROTRI>(rd, rs1_reg, mask),
+                    #[cfg(feature = "rv64")]
                     Xlen::Bit64 => self.emit_vshift_i::<VirtualROTRIW>(rd, rs1_reg, mask),
+                    #[cfg(not(feature = "rv64"))]
+                    _ => unreachable!("RV64 not supported in rv32 build"),
                 }
                 Reg(rd)
             }

@@ -1,21 +1,11 @@
-use super::and::AND;
-use super::andi::ANDI;
-use super::ld::LD;
-use super::ori::ORI;
-use super::sd::SD;
-use super::sll::SLL;
-use super::slli::SLLI;
-use super::srl::SRL;
-use super::srli::SRLI;
 use super::virtual_assert_word_alignment::VirtualAssertWordAlignment;
 use super::virtual_lw::VirtualLW;
 use super::virtual_move::VirtualMove;
-use super::virtual_sign_extend_word::VirtualSignExtendWord;
 use super::virtual_sw::VirtualSW;
-use super::xor::XOR;
 
 use crate::utils::inline_helpers::InstrAssembler;
 
+#[cfg(feature = "rv64")]
 pub fn amo_pre64(
     asm: &mut InstrAssembler,
     rs1: u8,
@@ -24,6 +14,10 @@ pub fn amo_pre64(
     v_dword: u8,
     v_shift: u8,
 ) {
+    use super::andi::ANDI;
+    use super::ld::LD;
+    use super::slli::SLLI;
+    use super::srl::SRL;
     asm.emit_halign::<VirtualAssertWordAlignment>(rs1, 0);
     asm.emit_i::<ANDI>(v_dword_address, rs1, -8i64 as u64);
     asm.emit_ld::<LD>(v_dword, v_dword_address, 0);
@@ -31,6 +25,7 @@ pub fn amo_pre64(
     asm.emit_r::<SRL>(v_rd, v_dword, v_shift);
 }
 
+#[cfg(feature = "rv64")]
 #[allow(clippy::too_many_arguments)]
 pub fn amo_post64(
     asm: &mut InstrAssembler,
@@ -43,6 +38,13 @@ pub fn amo_post64(
     rd: u8,
     v_rd: u8,
 ) {
+    use super::and::AND;
+    use super::ori::ORI;
+    use super::sd::SD;
+    use super::sll::SLL;
+    use super::srli::SRLI;
+    use super::virtual_sign_extend_word::VirtualSignExtendWord;
+    use super::xor::XOR;
     asm.emit_i::<ORI>(v_mask, 0, -1i64 as u64);
     asm.emit_i::<SRLI>(v_mask, v_mask, 32);
     asm.emit_r::<SLL>(v_mask, v_mask, v_shift);

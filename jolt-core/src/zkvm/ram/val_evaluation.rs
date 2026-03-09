@@ -139,9 +139,10 @@ impl<F: JoltField> ValEvaluationSumcheck<F> {
         let total_memory_vars = K.log_2();
 
         // Calculate untrusted advice contribution
+        let ws = common::constants::RAM_WORD_SIZE as usize;
         let untrusted_contribution = super::calculate_advice_memory_evaluation(
             accumulator.borrow().get_untrusted_advice_opening(),
-            (program_io.memory_layout.max_untrusted_advice_size as usize / 8)
+            (program_io.memory_layout.max_untrusted_advice_size as usize / ws)
                 .next_power_of_two()
                 .log_2(),
             program_io.memory_layout.untrusted_advice_start,
@@ -153,7 +154,7 @@ impl<F: JoltField> ValEvaluationSumcheck<F> {
         // Calculate trusted advice contribution
         let trusted_contribution = super::calculate_advice_memory_evaluation(
             accumulator.borrow().get_trusted_advice_opening(),
-            (program_io.memory_layout.max_trusted_advice_size as usize / 8)
+            (program_io.memory_layout.max_trusted_advice_size as usize / ws)
                 .next_power_of_two()
                 .log_2(),
             program_io.memory_layout.trusted_advice_start,

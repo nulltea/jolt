@@ -95,6 +95,18 @@ impl<F: JoltField> RafEvaluationSumcheck<F> {
                     running
                 },
             );
+        #[cfg(not(feature = "rv64"))]
+        {
+            let start = memory_layout.trusted_advice_start;
+            let ws = common::constants::RAM_WORD_SIZE;
+            let actual_sum: F = ra_evals.iter().enumerate().map(|(k, &ra_k)| {
+                let unmap_k = F::from_u64(ws * k as u64 + start - ws);
+                ra_k * unmap_k
+            }).sum();
+            eprintln!("RafEval::new_prover: K={} log_K={} ws={} raf_claim={:?} actual_sum={:?} match={}",
+                K, K.log_2(), ws, raf_claim, actual_sum, raf_claim == actual_sum);
+        }
+
         let ra = MultilinearPolynomial::from(ra_evals);
         let unmap = UnmapRamAddressPolynomial::new(K.log_2(), memory_layout.trusted_advice_start);
 
@@ -216,6 +228,11 @@ impl<F: JoltField, T: Transcript> SumcheckInstance<F, T> for RafEvaluationSumche
 
         // Return unmap(r) * ra(r)
         let ra_claim = self.cached_claim.expect("ra_claim not cached");
+
+        #[cfg(not(feature = "rv64"))]
+        eprintln!("RafEval::expected_output_claim: log_K={} start_addr={} unmap_eval={:?} ra_claim={:?} product={:?}",
+            self.log_K, self.start_address, unmap_eval, ra_claim, unmap_eval * ra_claim);
+
         unmap_eval * ra_claim
     }
 
@@ -236,6 +253,15 @@ impl<F: JoltField, T: Transcript> SumcheckInstance<F, T> for RafEvaluationSumche
             .prover_state
             .as_ref()
             .expect("Prover state not initialized");
+
+        #[cfg(not(feature = "rv64"))]
+        {
+            let ra_final = prover_state.ra.final_sumcheck_claim();
+            let unmap_final = prover_state.unmap.final_sumcheck_claim();
+            eprintln!("RafEval::cache_openings_prover: ra_final={:?} unmap_final={:?} product={:?}",
+                ra_final, unmap_final, ra_final * unmap_final);
+        }
+
         let r_cycle = accumulator
             .borrow()
             .get_virtual_polynomial_opening(VirtualPolynomial::RamAddress, SumcheckId::SpartanOuter)

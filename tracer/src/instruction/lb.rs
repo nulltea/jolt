@@ -9,6 +9,7 @@ use crate::{
 
 use super::addi::ADDI;
 use super::andi::ANDI;
+#[cfg(feature = "rv64")]
 use super::ld::LD;
 use super::sll::SLL;
 use super::slli::SLLI;
@@ -65,7 +66,10 @@ impl RISCVTrace for LB {
     ) -> Vec<Instruction> {
         match xlen {
             Xlen::Bit32 => self.inline_sequence_32(allocator),
+            #[cfg(feature = "rv64")]
             Xlen::Bit64 => self.inline_sequence_64(allocator),
+            #[cfg(not(feature = "rv64"))]
+            _ => unreachable!("RV64 not supported in rv32 build"),
         }
     }
 }
@@ -108,6 +112,7 @@ impl LB {
     /// 4. Calculate shift amount based on byte position (XOR with 7 for little-endian)
     /// 5. Shift byte to MSB position
     /// 6. Arithmetic right shift by 56 to sign-extend to 64 bits
+    #[cfg(feature = "rv64")]
     fn inline_sequence_64(&self, allocator: &VirtualRegisterAllocator) -> Vec<Instruction> {
         let v_address = allocator.allocate();
         let v_dword_address = allocator.allocate();

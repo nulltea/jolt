@@ -137,7 +137,7 @@ pub unsafe fn keccak_f(state: *mut u64) {
     );
 }
 
-#[cfg(feature = "host")]
+#[cfg(all(feature = "host", feature = "rv64"))]
 /// Calls the Keccak-f[1600] permutation reference implementation when running on
 /// the host where the custom RISC-V instruction is not available.
 ///
@@ -157,6 +157,12 @@ pub unsafe fn keccak_f(state: *mut u64) {
             .try_into()
             .expect("State slice was not 25 words"),
     );
+}
+
+#[cfg(all(feature = "host", not(feature = "rv64")))]
+/// Stub for RV32: keccak256 inline precompile is not supported in RV32 mode.
+pub unsafe fn keccak_f(_state: *mut u64) {
+    unimplemented!("keccak256 inline is not supported in RV32 mode");
 }
 
 #[cfg(all(test, feature = "host"))]

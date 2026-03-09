@@ -10,8 +10,10 @@ use crate::{
 use super::addi::ADDI;
 use super::and::AND;
 use super::andi::ANDI;
+#[cfg(feature = "rv64")]
 use super::ld::LD;
 use super::lui::LUI;
+#[cfg(feature = "rv64")]
 use super::sd::SD;
 use super::sll::SLL;
 use super::slli::SLLI;
@@ -66,7 +68,10 @@ impl RISCVTrace for SB {
     ) -> Vec<Instruction> {
         match xlen {
             Xlen::Bit32 => self.inline_sequence_32(allocator),
+            #[cfg(feature = "rv64")]
             Xlen::Bit64 => self.inline_sequence_64(allocator),
+            #[cfg(not(feature = "rv64"))]
+            _ => unreachable!("RV64 not supported in rv32 build"),
         }
     }
 }
@@ -112,6 +117,7 @@ impl SB {
     /// Similar to 32-bit version but operates on 64-bit doublewords.
     /// The byte position is determined by the lower 3 bits of the address,
     /// and the shift amount is multiplied by 8 to convert to bit positions.
+    #[cfg(feature = "rv64")]
     fn inline_sequence_64(&self, allocator: &VirtualRegisterAllocator) -> Vec<Instruction> {
         let v_address = allocator.allocate();
         let v_dword_address = allocator.allocate();

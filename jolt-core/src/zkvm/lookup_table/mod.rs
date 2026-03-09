@@ -8,6 +8,7 @@ use mulu_no_overflow::MulUNoOverflowTable;
 use not_equal::NotEqualTable;
 use or::OrTable;
 use pow2::Pow2Table;
+#[cfg(feature = "rv64")]
 use pow2_w::Pow2WTable;
 use prefixes::PrefixEval;
 use range_check::RangeCheckTable;
@@ -28,13 +29,17 @@ use valid_div0::ValidDiv0Table;
 use valid_signed_remainder::ValidSignedRemainderTable;
 use valid_unsigned_remainder::ValidUnsignedRemainderTable;
 use virtual_change_divisor::VirtualChangeDivisorTable;
+#[cfg(feature = "rv64")]
 use virtual_change_divisor_w::VirtualChangeDivisorWTable;
+#[cfg(feature = "rv64")]
 use virtual_rev8w::VirtualRev8WTable;
 use virtual_rotr::VirtualRotrTable;
+#[cfg(feature = "rv64")]
 use virtual_rotrw::VirtualRotrWTable;
 use virtual_sra::VirtualSRATable;
 use virtual_srl::VirtualSRLTable;
 use virtual_xor_rot::VirtualXORROTTable;
+#[cfg(feature = "rv64")]
 use virtual_xor_rotw::VirtualXORROTWTable;
 use word_alignment::WordAlignmentTable;
 use xor::XorTable;
@@ -84,6 +89,7 @@ pub mod mulu_no_overflow;
 pub mod not_equal;
 pub mod or;
 pub mod pow2;
+#[cfg(feature = "rv64")]
 pub mod pow2_w;
 pub mod range_check;
 pub mod shift_right_bitmask;
@@ -99,13 +105,17 @@ pub mod valid_div0;
 pub mod valid_signed_remainder;
 pub mod valid_unsigned_remainder;
 pub mod virtual_change_divisor;
+#[cfg(feature = "rv64")]
 pub mod virtual_change_divisor_w;
+#[cfg(feature = "rv64")]
 pub mod virtual_rev8w;
 pub mod virtual_rotr;
+#[cfg(feature = "rv64")]
 pub mod virtual_rotrw;
 pub mod virtual_sra;
 pub mod virtual_srl;
 pub mod virtual_xor_rot;
+#[cfg(feature = "rv64")]
 pub mod virtual_xor_rotw;
 pub mod word_alignment;
 pub mod xor;
@@ -140,23 +150,31 @@ pub enum LookupTables<const XLEN: usize> {
     LowerHalfWord(LowerHalfWordTable<XLEN>),
     SignExtendHalfWord(SignExtendHalfWordTable<XLEN>),
     Pow2(Pow2Table<XLEN>),
+    #[cfg(feature = "rv64")]
     Pow2W(Pow2WTable<XLEN>),
     ShiftRightBitmask(ShiftRightBitmaskTable<XLEN>),
+    #[cfg(feature = "rv64")]
     VirtualRev8W(VirtualRev8WTable<XLEN>),
     VirtualSRL(VirtualSRLTable<XLEN>),
     VirtualSRA(VirtualSRATable<XLEN>),
     VirtualROTR(VirtualRotrTable<XLEN>),
+    #[cfg(feature = "rv64")]
     VirtualROTRW(VirtualRotrWTable<XLEN>),
     VirtualChangeDivisor(VirtualChangeDivisorTable<XLEN>),
+    #[cfg(feature = "rv64")]
     VirtualChangeDivisorW(VirtualChangeDivisorWTable<XLEN>),
     MulUNoOverflow(MulUNoOverflowTable<XLEN>),
     VirtualXORROT32(VirtualXORROTTable<XLEN, 32>),
     VirtualXORROT24(VirtualXORROTTable<XLEN, 24>),
     VirtualXORROT16(VirtualXORROTTable<XLEN, 16>),
     VirtualXORROT63(VirtualXORROTTable<XLEN, 63>),
+    #[cfg(feature = "rv64")]
     VirtualXORROTW16(VirtualXORROTWTable<XLEN, 16>),
+    #[cfg(feature = "rv64")]
     VirtualXORROTW12(VirtualXORROTWTable<XLEN, 12>),
+    #[cfg(feature = "rv64")]
     VirtualXORROTW8(VirtualXORROTWTable<XLEN, 8>),
+    #[cfg(feature = "rv64")]
     VirtualXORROTW7(VirtualXORROTWTable<XLEN, 7>),
 }
 
@@ -192,23 +210,31 @@ impl<const XLEN: usize> LookupTables<XLEN> {
             LookupTables::LowerHalfWord(table) => table.materialize(),
             LookupTables::SignExtendHalfWord(table) => table.materialize(),
             LookupTables::Pow2(table) => table.materialize(),
+            #[cfg(feature = "rv64")]
             LookupTables::Pow2W(table) => table.materialize(),
             LookupTables::ShiftRightBitmask(table) => table.materialize(),
+            #[cfg(feature = "rv64")]
             LookupTables::VirtualRev8W(table) => table.materialize(),
             LookupTables::VirtualSRL(table) => table.materialize(),
             LookupTables::VirtualSRA(table) => table.materialize(),
             LookupTables::VirtualROTR(table) => table.materialize(),
+            #[cfg(feature = "rv64")]
             LookupTables::VirtualROTRW(table) => table.materialize(),
             LookupTables::VirtualChangeDivisor(table) => table.materialize(),
+            #[cfg(feature = "rv64")]
             LookupTables::VirtualChangeDivisorW(table) => table.materialize(),
             LookupTables::MulUNoOverflow(table) => table.materialize(),
             LookupTables::VirtualXORROT32(table) => table.materialize(),
             LookupTables::VirtualXORROT24(table) => table.materialize(),
             LookupTables::VirtualXORROT16(table) => table.materialize(),
             LookupTables::VirtualXORROT63(table) => table.materialize(),
+            #[cfg(feature = "rv64")]
             LookupTables::VirtualXORROTW7(table) => table.materialize(),
+            #[cfg(feature = "rv64")]
             LookupTables::VirtualXORROTW8(table) => table.materialize(),
+            #[cfg(feature = "rv64")]
             LookupTables::VirtualXORROTW12(table) => table.materialize(),
+            #[cfg(feature = "rv64")]
             LookupTables::VirtualXORROTW16(table) => table.materialize(),
         }
     }
@@ -237,23 +263,31 @@ impl<const XLEN: usize> LookupTables<XLEN> {
             LookupTables::LowerHalfWord(table) => table.materialize_entry(index),
             LookupTables::SignExtendHalfWord(table) => table.materialize_entry(index),
             LookupTables::Pow2(table) => table.materialize_entry(index),
+            #[cfg(feature = "rv64")]
             LookupTables::Pow2W(table) => table.materialize_entry(index),
             LookupTables::ShiftRightBitmask(table) => table.materialize_entry(index),
+            #[cfg(feature = "rv64")]
             LookupTables::VirtualRev8W(table) => table.materialize_entry(index),
             LookupTables::VirtualSRL(table) => table.materialize_entry(index),
             LookupTables::VirtualSRA(table) => table.materialize_entry(index),
             LookupTables::VirtualROTR(table) => table.materialize_entry(index),
+            #[cfg(feature = "rv64")]
             LookupTables::VirtualROTRW(table) => table.materialize_entry(index),
             LookupTables::VirtualChangeDivisor(table) => table.materialize_entry(index),
+            #[cfg(feature = "rv64")]
             LookupTables::VirtualChangeDivisorW(table) => table.materialize_entry(index),
             LookupTables::MulUNoOverflow(table) => table.materialize_entry(index),
             LookupTables::VirtualXORROT32(table) => table.materialize_entry(index),
             LookupTables::VirtualXORROT24(table) => table.materialize_entry(index),
             LookupTables::VirtualXORROT16(table) => table.materialize_entry(index),
             LookupTables::VirtualXORROT63(table) => table.materialize_entry(index),
+            #[cfg(feature = "rv64")]
             LookupTables::VirtualXORROTW7(table) => table.materialize_entry(index),
+            #[cfg(feature = "rv64")]
             LookupTables::VirtualXORROTW8(table) => table.materialize_entry(index),
+            #[cfg(feature = "rv64")]
             LookupTables::VirtualXORROTW12(table) => table.materialize_entry(index),
+            #[cfg(feature = "rv64")]
             LookupTables::VirtualXORROTW16(table) => table.materialize_entry(index),
         }
     }
@@ -286,23 +320,31 @@ impl<const XLEN: usize> LookupTables<XLEN> {
             LookupTables::LowerHalfWord(table) => table.evaluate_mle(r),
             LookupTables::SignExtendHalfWord(table) => table.evaluate_mle(r),
             LookupTables::Pow2(table) => table.evaluate_mle(r),
+            #[cfg(feature = "rv64")]
             LookupTables::Pow2W(table) => table.evaluate_mle(r),
             LookupTables::ShiftRightBitmask(table) => table.evaluate_mle(r),
+            #[cfg(feature = "rv64")]
             LookupTables::VirtualRev8W(table) => table.evaluate_mle(r),
             LookupTables::VirtualSRL(table) => table.evaluate_mle(r),
             LookupTables::VirtualSRA(table) => table.evaluate_mle(r),
             LookupTables::VirtualROTR(table) => table.evaluate_mle(r),
+            #[cfg(feature = "rv64")]
             LookupTables::VirtualROTRW(table) => table.evaluate_mle(r),
             LookupTables::VirtualChangeDivisor(table) => table.evaluate_mle(r),
+            #[cfg(feature = "rv64")]
             LookupTables::VirtualChangeDivisorW(table) => table.evaluate_mle(r),
             LookupTables::MulUNoOverflow(table) => table.evaluate_mle(r),
             LookupTables::VirtualXORROT32(table) => table.evaluate_mle(r),
             LookupTables::VirtualXORROT24(table) => table.evaluate_mle(r),
             LookupTables::VirtualXORROT16(table) => table.evaluate_mle(r),
             LookupTables::VirtualXORROT63(table) => table.evaluate_mle(r),
+            #[cfg(feature = "rv64")]
             LookupTables::VirtualXORROTW7(table) => table.evaluate_mle(r),
+            #[cfg(feature = "rv64")]
             LookupTables::VirtualXORROTW8(table) => table.evaluate_mle(r),
+            #[cfg(feature = "rv64")]
             LookupTables::VirtualXORROTW12(table) => table.evaluate_mle(r),
+            #[cfg(feature = "rv64")]
             LookupTables::VirtualXORROTW16(table) => table.evaluate_mle(r),
         }
     }
@@ -331,23 +373,31 @@ impl<const XLEN: usize> LookupTables<XLEN> {
             LookupTables::LowerHalfWord(table) => table.suffixes(),
             LookupTables::SignExtendHalfWord(table) => table.suffixes(),
             LookupTables::Pow2(table) => table.suffixes(),
+            #[cfg(feature = "rv64")]
             LookupTables::Pow2W(table) => table.suffixes(),
             LookupTables::ShiftRightBitmask(table) => table.suffixes(),
+            #[cfg(feature = "rv64")]
             LookupTables::VirtualRev8W(table) => table.suffixes(),
             LookupTables::VirtualSRL(table) => table.suffixes(),
             LookupTables::VirtualSRA(table) => table.suffixes(),
             LookupTables::VirtualROTR(table) => table.suffixes(),
+            #[cfg(feature = "rv64")]
             LookupTables::VirtualROTRW(table) => table.suffixes(),
             LookupTables::VirtualChangeDivisor(table) => table.suffixes(),
+            #[cfg(feature = "rv64")]
             LookupTables::VirtualChangeDivisorW(table) => table.suffixes(),
             LookupTables::MulUNoOverflow(table) => table.suffixes(),
             LookupTables::VirtualXORROT32(table) => table.suffixes(),
             LookupTables::VirtualXORROT24(table) => table.suffixes(),
             LookupTables::VirtualXORROT16(table) => table.suffixes(),
             LookupTables::VirtualXORROT63(table) => table.suffixes(),
+            #[cfg(feature = "rv64")]
             LookupTables::VirtualXORROTW7(table) => table.suffixes(),
+            #[cfg(feature = "rv64")]
             LookupTables::VirtualXORROTW8(table) => table.suffixes(),
+            #[cfg(feature = "rv64")]
             LookupTables::VirtualXORROTW12(table) => table.suffixes(),
+            #[cfg(feature = "rv64")]
             LookupTables::VirtualXORROTW16(table) => table.suffixes(),
         }
     }
@@ -380,23 +430,31 @@ impl<const XLEN: usize> LookupTables<XLEN> {
             LookupTables::LowerHalfWord(table) => table.combine(prefixes, suffixes),
             LookupTables::SignExtendHalfWord(table) => table.combine(prefixes, suffixes),
             LookupTables::Pow2(table) => table.combine(prefixes, suffixes),
+            #[cfg(feature = "rv64")]
             LookupTables::Pow2W(table) => table.combine(prefixes, suffixes),
             LookupTables::ShiftRightBitmask(table) => table.combine(prefixes, suffixes),
+            #[cfg(feature = "rv64")]
             LookupTables::VirtualRev8W(table) => table.combine(prefixes, suffixes),
             LookupTables::VirtualSRL(table) => table.combine(prefixes, suffixes),
             LookupTables::VirtualSRA(table) => table.combine(prefixes, suffixes),
             LookupTables::VirtualROTR(table) => table.combine(prefixes, suffixes),
+            #[cfg(feature = "rv64")]
             LookupTables::VirtualROTRW(table) => table.combine(prefixes, suffixes),
             LookupTables::VirtualChangeDivisor(table) => table.combine(prefixes, suffixes),
+            #[cfg(feature = "rv64")]
             LookupTables::VirtualChangeDivisorW(table) => table.combine(prefixes, suffixes),
             LookupTables::MulUNoOverflow(table) => table.combine(prefixes, suffixes),
             LookupTables::VirtualXORROT32(table) => table.combine(prefixes, suffixes),
             LookupTables::VirtualXORROT24(table) => table.combine(prefixes, suffixes),
             LookupTables::VirtualXORROT16(table) => table.combine(prefixes, suffixes),
             LookupTables::VirtualXORROT63(table) => table.combine(prefixes, suffixes),
+            #[cfg(feature = "rv64")]
             LookupTables::VirtualXORROTW7(table) => table.combine(prefixes, suffixes),
+            #[cfg(feature = "rv64")]
             LookupTables::VirtualXORROTW8(table) => table.combine(prefixes, suffixes),
+            #[cfg(feature = "rv64")]
             LookupTables::VirtualXORROTW12(table) => table.combine(prefixes, suffixes),
+            #[cfg(feature = "rv64")]
             LookupTables::VirtualXORROTW16(table) => table.combine(prefixes, suffixes),
         }
     }

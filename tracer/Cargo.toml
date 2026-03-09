@@ -23,6 +23,8 @@ path = "src/main.rs"
 
 [features]
 default = ["std"]
+rv32 = []
+rv64 = ["common/rv64"]
 std = [
     "jolt-platform/std",
     "common/std",

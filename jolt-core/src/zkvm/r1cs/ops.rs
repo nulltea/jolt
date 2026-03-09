@@ -736,6 +736,12 @@ macro_rules! lc {
 	(@acc $acc:expr ; - { $k:literal } $( $rest:tt )* ) => {
 		$crate::lc!(@acc $acc.add_const_or_zero_i128(-$k) ; $($rest)* )
 	};
+	(@acc $acc:expr ; + { const $e:expr } $( $rest:tt )* ) => {
+		$crate::lc!(@acc $acc.add_const_or_zero_i128($e) ; $($rest)* )
+	};
+	(@acc $acc:expr ; - { const $e:expr } $( $rest:tt )* ) => {
+		$crate::lc!(@acc $acc.add_const_or_zero_i128(-($e)) ; $($rest)* )
+	};
 	(@acc $acc:expr ; + { $e:expr } $( $rest:tt )* ) => {
 		$crate::lc!(@acc $acc.add_or_zero($crate::zkvm::r1cs::ops::LC::from_input($e)) ; $($rest)* )
 	};

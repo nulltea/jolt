@@ -47,6 +47,13 @@ minimal = ["ark-ec/std", "ark-ff/std", "ark-std/std", "ark-ff/asm", "rayon"]
 allocative = ["dep:inferno"]
 monitor = ["dep:sysinfo"]
 pprof = ["dep:pprof", "dep:prost"]
+rv32 = []
+rv64 = [
+    "common/rv64",
+    "tracer/rv64",
+    "jolt-inlines-sha2?/rv64",
+    "jolt-inlines-keccak256?/rv64",
+]
 test_incremental = []
 challenge-254-bit = []
 

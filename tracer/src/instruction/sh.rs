@@ -9,8 +9,10 @@ use crate::{
 use super::addi::ADDI;
 use super::and::AND;
 use super::andi::ANDI;
+#[cfg(feature = "rv64")]
 use super::ld::LD;
 use super::lui::LUI;
+#[cfg(feature = "rv64")]
 use super::sd::SD;
 use super::sll::SLL;
 use super::slli::SLLI;
@@ -73,7 +75,10 @@ impl RISCVTrace for SH {
     ) -> Vec<Instruction> {
         match xlen {
             Xlen::Bit32 => self.inline_sequence_32(allocator),
+            #[cfg(feature = "rv64")]
             Xlen::Bit64 => self.inline_sequence_64(allocator),
+            #[cfg(not(feature = "rv64"))]
+            _ => unreachable!("RV64 not supported in rv32 build"),
         }
     }
 }
@@ -120,6 +125,7 @@ impl SH {
     /// Similar to 32-bit version but operates on 64-bit doublewords.
     /// The halfword position is determined by bits 1-2 of the address
     /// (4 possible halfword positions within an 8-byte doubleword).
+    #[cfg(feature = "rv64")]
     fn inline_sequence_64(&self, allocator: &VirtualRegisterAllocator) -> Vec<Instruction> {
         // Virtual registers used in sequence
         let v_address = allocator.allocate();

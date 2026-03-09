@@ -14,14 +14,14 @@ pub type Keccak256State = [u64; NUM_LANES];
 pub mod sdk;
 pub use sdk::*;
 
-#[cfg(feature = "host")]
+#[cfg(all(feature = "host", feature = "rv64"))]
 pub mod exec;
-#[cfg(feature = "host")]
+#[cfg(all(feature = "host", feature = "rv64"))]
 pub mod sequence_builder;
 
-#[cfg(feature = "host")]
+#[cfg(all(feature = "host", feature = "rv64"))]
 mod host;
-#[cfg(feature = "host")]
+#[cfg(all(feature = "host", feature = "rv64"))]
 pub use host::*;
 
 #[cfg(all(test, feature = "host"))]

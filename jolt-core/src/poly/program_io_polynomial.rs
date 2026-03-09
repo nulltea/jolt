@@ -1,10 +1,10 @@
-use common::constants::RAM_START_ADDRESS;
+use common::constants::{RAM_START_ADDRESS, RAM_WORD_SIZE};
 use tracer::JoltDevice;
 
 use crate::{
     field::JoltField,
     poly::multilinear_polynomial::{MultilinearPolynomial, PolynomialEvaluation},
-    zkvm::ram::remap_address,
+    zkvm::ram::{bytes_to_ram_word, remap_address},
 };
 
 pub struct ProgramIOPolynomial<F: JoltField> {
@@ -23,14 +23,10 @@ impl<F: JoltField> ProgramIOPolynomial<F> {
             &program_io.memory_layout,
         )
         .unwrap() as usize;
+        let ws = RAM_WORD_SIZE as usize;
         // Convert input bytes into words and populate `coeffs`
-        for chunk in program_io.inputs.chunks(8) {
-            let mut word = [0u8; 8];
-            for (i, byte) in chunk.iter().enumerate() {
-                word[i] = *byte;
-            }
-            let word = u64::from_le_bytes(word);
-            coeffs[input_index] = word;
+        for chunk in program_io.inputs.chunks(ws) {
+            coeffs[input_index] = bytes_to_ram_word(chunk);
             input_index += 1;
         }
 
@@ -40,13 +36,8 @@ impl<F: JoltField> ProgramIOPolynomial<F> {
         )
         .unwrap() as usize;
         // Convert output bytes into words and populate `coeffs`
-        for chunk in program_io.outputs.chunks(8) {
-            let mut word = [0u8; 8];
-            for (i, byte) in chunk.iter().enumerate() {
-                word[i] = *byte;
-            }
-            let word = u64::from_le_bytes(word);
-            coeffs[output_index] = word;
+        for chunk in program_io.outputs.chunks(ws) {
+            coeffs[output_index] = bytes_to_ram_word(chunk);
             output_index += 1;
         }
 

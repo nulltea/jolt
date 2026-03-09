@@ -232,6 +232,7 @@ macro_rules! define_rv32im_trait_impls {
     };
 }
 
+#[cfg(feature = "rv64")]
 define_rv32im_trait_impls! {
     instructions: [
         ADD, ADDI, AND, ANDI, ANDN, AUIPC, BEQ, BGE, BGEU, BLT, BLTU, BNE,
@@ -241,12 +242,32 @@ define_rv32im_trait_impls! {
         VirtualAssertWordAlignment, VirtualAssertLTE,
         VirtualAssertValidDiv0, VirtualAssertValidUnsignedRemainder,
         VirtualChangeDivisor, VirtualChangeDivisorW, VirtualAssertMulUNoOverflow,
+        VirtualLW, VirtualSW,
         VirtualZeroExtendWord, VirtualSignExtendWord, VirtualMove, VirtualMovsign, VirtualMULI, VirtualPow2,
         VirtualPow2I, VirtualPow2W, VirtualPow2IW, VirtualRev8W, VirtualShiftRightBitmask, VirtualShiftRightBitmaskI,
         VirtualROTRI, VirtualROTRIW,
         VirtualSRA, VirtualSRAI, VirtualSRL, VirtualSRLI,
         VirtualXORROT32, VirtualXORROT24, VirtualXORROT16, VirtualXORROT63,
         VirtualXORROTW16, VirtualXORROTW12, VirtualXORROTW8, VirtualXORROTW7
+    ]
+}
+
+#[cfg(not(feature = "rv64"))]
+define_rv32im_trait_impls! {
+    instructions: [
+        ADD, ADDI, AND, ANDI, ANDN, AUIPC, BEQ, BGE, BGEU, BLT, BLTU, BNE,
+        ECALL, FENCE, JAL, JALR, LUI, MUL, MULHU, OR, ORI,
+        SLT, SLTI, SLTIU, SLTU, SUB, XOR, XORI,
+        VirtualAdvice, VirtualAssertEQ, VirtualAssertHalfwordAlignment,
+        VirtualAssertWordAlignment, VirtualAssertLTE,
+        VirtualAssertValidDiv0, VirtualAssertValidUnsignedRemainder,
+        VirtualChangeDivisor, VirtualAssertMulUNoOverflow,
+        VirtualLW, VirtualSW,
+        VirtualMove, VirtualMovsign, VirtualMULI, VirtualPow2,
+        VirtualPow2I, VirtualShiftRightBitmask, VirtualShiftRightBitmaskI,
+        VirtualROTRI,
+        VirtualSRA, VirtualSRAI, VirtualSRL, VirtualSRLI,
+        VirtualXORROT32, VirtualXORROT24, VirtualXORROT16, VirtualXORROT63
     ]
 }
 
@@ -266,12 +287,14 @@ pub mod ecall;
 pub mod fence;
 pub mod jal;
 pub mod jalr;
+#[cfg(feature = "rv64")]
 pub mod ld;
 pub mod lui;
 pub mod mul;
 pub mod mulhu;
 pub mod or;
 pub mod ori;
+#[cfg(feature = "rv64")]
 pub mod sd;
 pub mod slt;
 pub mod slti;
@@ -287,26 +310,36 @@ pub mod virtual_assert_valid_div0;
 pub mod virtual_assert_valid_unsigned_remainder;
 pub mod virtual_assert_word_alignment;
 pub mod virtual_change_divisor;
+#[cfg(feature = "rv64")]
 pub mod virtual_change_divisor_w;
 pub mod virtual_move;
 pub mod virtual_movsign;
 pub mod virtual_muli;
 pub mod virtual_pow2;
 pub mod virtual_pow2i;
+#[cfg(feature = "rv64")]
 pub mod virtual_pow2iw;
+#[cfg(feature = "rv64")]
 pub mod virtual_pow2w;
+#[cfg(feature = "rv64")]
 pub mod virtual_rev8w;
 pub mod virtual_rotri;
+#[cfg(feature = "rv64")]
 pub mod virtual_rotriw;
 pub mod virtual_shift_right_bitmask;
 pub mod virtual_shift_right_bitmaski;
+#[cfg(feature = "rv64")]
 pub mod virtual_sign_extend_word;
+pub mod virtual_lw;
+pub mod virtual_sw;
 pub mod virtual_sra;
 pub mod virtual_srai;
 pub mod virtual_srl;
 pub mod virtual_srli;
 pub mod virtual_xor_rot;
+#[cfg(feature = "rv64")]
 pub mod virtual_xor_rotw;
+#[cfg(feature = "rv64")]
 pub mod virtual_zero_extend_word;
 pub mod xor;
 pub mod xori;

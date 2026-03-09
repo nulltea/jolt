@@ -1,4 +1,29 @@
+#[cfg(not(feature = "rv64"))]
+pub const XLEN: usize = 32;
+#[cfg(feature = "rv64")]
 pub const XLEN: usize = 64;
+
+/// Native register-width integer type
+#[cfg(not(feature = "rv64"))]
+pub type XlenInt = u32;
+#[cfg(feature = "rv64")]
+pub type XlenInt = u64;
+
+/// Lookup index type (interleave of two XlenInt values)
+#[cfg(not(feature = "rv64"))]
+pub type LookupIndexInt = u64;
+#[cfg(feature = "rv64")]
+pub type LookupIndexInt = u128;
+
+/// Wide integer for arithmetic operations (2x XlenInt)
+#[cfg(not(feature = "rv64"))]
+pub type ArithmeticWideInt = u64;
+#[cfg(feature = "rv64")]
+pub type ArithmeticWideInt = u128;
+
+/// Number of bytes in one XLEN-wide word (4 for rv32, 8 for rv64)
+pub const RAM_WORD_SIZE: u64 = (XLEN / 8) as u64;
+
 pub const RISCV_REGISTER_COUNT: u8 = 32;
 pub const VIRTUAL_REGISTER_COUNT: u8 = 96; //  see Section 6.1 of Jolt paper
 pub const VIRTUAL_INSTRUCTION_RESERVED_REGISTER_COUNT: u8 = 16; // Reserved virtual registers for virtual instructions

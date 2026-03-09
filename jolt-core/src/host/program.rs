@@ -85,6 +85,28 @@ impl Program {
     #[tracing::instrument(skip_all, name = "Program::build")]
     pub fn build_with_channel(&mut self, target_dir: &str, channel: &str) {
         if self.elf.is_none() {
+            // Check if a pre-built ELF already exists at the expected path
+            #[cfg(feature = "rv64")]
+            let target_triple = if self.std {
+                "riscv64imac-jolt-zkvm-elf"
+            } else {
+                "riscv64imac-unknown-none-elf"
+            };
+            #[cfg(not(feature = "rv64"))]
+            let target_triple = "riscv32im-unknown-none-elf";
+            let target = format!(
+                "{}/{}-{}",
+                target_dir,
+                self.guest,
+                self.func.as_ref().unwrap_or(&"".to_string())
+            );
+            let elf_path = format!("{}/{}/release/{}", target, target_triple, self.guest);
+            if std::path::Path::new(&elf_path).exists() {
+                info!("Using pre-built guest binary: {elf_path}");
+                self.elf = Some(PathBuf::from_str(&elf_path).unwrap());
+                return;
+            }
+
             #[cfg(not(target_arch = "wasm32"))]
             install_toolchain().unwrap();
             #[cfg(not(target_arch = "wasm32"))]
@@ -126,11 +148,14 @@ impl Program {
                 "getrandom_backend=\"custom\"".to_string(),
             ]);
 
+            #[cfg(feature = "rv64")]
             let target_triple = if self.std {
                 "riscv64imac-jolt-zkvm-elf"
             } else {
                 "riscv64imac-unknown-none-elf"
             };
+            #[cfg(not(feature = "rv64"))]
+            let target_triple = "riscv32im-unknown-none-elf";
 
             let mut envs = vec![("CARGO_ENCODED_RUSTFLAGS", rust_flags.join("\x1f"))];
 

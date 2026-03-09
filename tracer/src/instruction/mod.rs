@@ -2,25 +2,14 @@
 
 use add::ADD;
 use addi::ADDI;
-use addiw::ADDIW;
-use addw::ADDW;
-use amoaddd::AMOADDD;
 use amoaddw::AMOADDW;
-use amoandd::AMOANDD;
 use amoandw::AMOANDW;
-use amomaxd::AMOMAXD;
-use amomaxud::AMOMAXUD;
 use amomaxuw::AMOMAXUW;
 use amomaxw::AMOMAXW;
-use amomind::AMOMIND;
-use amominud::AMOMINUD;
 use amominuw::AMOMINUW;
 use amominw::AMOMINW;
-use amoord::AMOORD;
 use amoorw::AMOORW;
-use amoswapd::AMOSWAPD;
 use amoswapw::AMOSWAPW;
-use amoxord::AMOXORD;
 use amoxorw::AMOXORW;
 use and::AND;
 use andi::ANDI;
@@ -37,61 +26,102 @@ use bltu::BLTU;
 use bne::BNE;
 use div::DIV;
 use divu::DIVU;
-use divuw::DIVUW;
-use divw::DIVW;
 use ecall::ECALL;
 use fence::FENCE;
 use jal::JAL;
 use jalr::JALR;
 use lb::LB;
 use lbu::LBU;
-use ld::LD;
 use lh::LH;
 use lhu::LHU;
-use lrd::LRD;
 use lrw::LRW;
 use lui::LUI;
 use lw::LW;
-use lwu::LWU;
 use mul::MUL;
 use mulh::MULH;
 use mulhsu::MULHSU;
 use mulhu::MULHU;
-use mulw::MULW;
 use or::OR;
 use ori::ORI;
 use rem::REM;
 use remu::REMU;
-use remuw::REMUW;
-use remw::REMW;
 use sb::SB;
-use scd::SCD;
 use scw::SCW;
-use sd::SD;
 use serde::{Deserialize, Serialize};
 use sh::SH;
 use sll::SLL;
 use slli::SLLI;
-use slliw::SLLIW;
-use sllw::SLLW;
 use slt::SLT;
 use slti::SLTI;
 use sltiu::SLTIU;
 use sltu::SLTU;
 use sra::SRA;
 use srai::SRAI;
-use sraiw::SRAIW;
-use sraw::SRAW;
 use srl::SRL;
 use srli::SRLI;
-use srliw::SRLIW;
-use srlw::SRLW;
 use strum_macros::{EnumCount as EnumCountMacro, EnumIter, IntoStaticStr};
 use sub::SUB;
-use subw::SUBW;
 use sw::SW;
 use xor::XOR;
 use xori::XORI;
+
+// RV64-only instruction imports
+#[cfg(feature = "rv64")]
+use addiw::ADDIW;
+#[cfg(feature = "rv64")]
+use addw::ADDW;
+#[cfg(feature = "rv64")]
+use amoaddd::AMOADDD;
+#[cfg(feature = "rv64")]
+use amoandd::AMOANDD;
+#[cfg(feature = "rv64")]
+use amomaxd::AMOMAXD;
+#[cfg(feature = "rv64")]
+use amomaxud::AMOMAXUD;
+#[cfg(feature = "rv64")]
+use amomind::AMOMIND;
+#[cfg(feature = "rv64")]
+use amominud::AMOMINUD;
+#[cfg(feature = "rv64")]
+use amoord::AMOORD;
+#[cfg(feature = "rv64")]
+use amoswapd::AMOSWAPD;
+#[cfg(feature = "rv64")]
+use amoxord::AMOXORD;
+#[cfg(feature = "rv64")]
+use divuw::DIVUW;
+#[cfg(feature = "rv64")]
+use divw::DIVW;
+#[cfg(feature = "rv64")]
+use ld::LD;
+#[cfg(feature = "rv64")]
+use lrd::LRD;
+#[cfg(feature = "rv64")]
+use lwu::LWU;
+#[cfg(feature = "rv64")]
+use mulw::MULW;
+#[cfg(feature = "rv64")]
+use remuw::REMUW;
+#[cfg(feature = "rv64")]
+use remw::REMW;
+#[cfg(feature = "rv64")]
+use scd::SCD;
+#[cfg(feature = "rv64")]
+use sd::SD;
+#[cfg(feature = "rv64")]
+use slliw::SLLIW;
+#[cfg(feature = "rv64")]
+use sllw::SLLW;
+#[cfg(feature = "rv64")]
+use sraiw::SRAIW;
+#[cfg(feature = "rv64")]
+use sraw::SRAW;
+#[cfg(feature = "rv64")]
+use srliw::SRLIW;
+#[cfg(feature = "rv64")]
+use srlw::SRLW;
+#[cfg(feature = "rv64")]
+use subw::SUBW;
 
 use virtual_advice::VirtualAdvice;
 use virtual_assert_eq::VirtualAssertEQ;
@@ -102,28 +132,38 @@ use virtual_assert_valid_div0::VirtualAssertValidDiv0;
 use virtual_assert_valid_unsigned_remainder::VirtualAssertValidUnsignedRemainder;
 use virtual_assert_word_alignment::VirtualAssertWordAlignment;
 use virtual_change_divisor::VirtualChangeDivisor;
-use virtual_change_divisor_w::VirtualChangeDivisorW;
 use virtual_lw::VirtualLW;
 use virtual_move::VirtualMove;
 use virtual_movsign::VirtualMovsign;
 use virtual_muli::VirtualMULI;
 use virtual_pow2::VirtualPow2;
-use virtual_pow2_w::VirtualPow2W;
 use virtual_pow2i::VirtualPow2I;
-use virtual_pow2i_w::VirtualPow2IW;
-use virtual_rev8w::VirtualRev8W;
 use virtual_rotri::VirtualROTRI;
-use virtual_rotriw::VirtualROTRIW;
 use virtual_shift_right_bitmask::VirtualShiftRightBitmask;
 use virtual_shift_right_bitmaski::VirtualShiftRightBitmaskI;
-use virtual_sign_extend_word::VirtualSignExtendWord;
 use virtual_sra::VirtualSRA;
 use virtual_srai::VirtualSRAI;
 use virtual_srl::VirtualSRL;
 use virtual_srli::VirtualSRLI;
 use virtual_sw::VirtualSW;
 use virtual_xor_rot::{VirtualXORROT16, VirtualXORROT24, VirtualXORROT32, VirtualXORROT63};
+
+// RV64-only virtual instruction imports
+#[cfg(feature = "rv64")]
+use virtual_change_divisor_w::VirtualChangeDivisorW;
+#[cfg(feature = "rv64")]
+use virtual_pow2_w::VirtualPow2W;
+#[cfg(feature = "rv64")]
+use virtual_pow2i_w::VirtualPow2IW;
+#[cfg(feature = "rv64")]
+use virtual_rev8w::VirtualRev8W;
+#[cfg(feature = "rv64")]
+use virtual_rotriw::VirtualROTRIW;
+#[cfg(feature = "rv64")]
+use virtual_sign_extend_word::VirtualSignExtendWord;
+#[cfg(feature = "rv64")]
 use virtual_xor_rotw::{VirtualXORROTW12, VirtualXORROTW16, VirtualXORROTW7, VirtualXORROTW8};
+#[cfg(feature = "rv64")]
 use virtual_zero_extend_word::VirtualZeroExtendWord;
 
 use self::inline::INLINE;
@@ -141,25 +181,14 @@ pub(super) mod amo;
 
 pub mod add;
 pub mod addi;
-pub mod addiw;
-pub mod addw;
-pub mod amoaddd;
 pub mod amoaddw;
-pub mod amoandd;
 pub mod amoandw;
-pub mod amomaxd;
-pub mod amomaxud;
 pub mod amomaxuw;
 pub mod amomaxw;
-pub mod amomind;
-pub mod amominud;
 pub mod amominuw;
 pub mod amominw;
-pub mod amoord;
 pub mod amoorw;
-pub mod amoswapd;
 pub mod amoswapw;
-pub mod amoxord;
 pub mod amoxorw;
 pub mod and;
 pub mod andi;
@@ -173,8 +202,6 @@ pub mod bltu;
 pub mod bne;
 pub mod div;
 pub mod divu;
-pub mod divuw;
-pub mod divw;
 pub mod ecall;
 pub mod fence;
 pub mod inline;
@@ -182,48 +209,33 @@ pub mod jal;
 pub mod jalr;
 pub mod lb;
 pub mod lbu;
-pub mod ld;
 pub mod lh;
 pub mod lhu;
-pub mod lrd;
 pub mod lrw;
 pub mod lui;
 pub mod lw;
-pub mod lwu;
 pub mod mul;
 pub mod mulh;
 pub mod mulhsu;
 pub mod mulhu;
-pub mod mulw;
 pub mod or;
 pub mod ori;
 pub mod rem;
 pub mod remu;
-pub mod remuw;
-pub mod remw;
 pub mod sb;
-pub mod scd;
 pub mod scw;
-pub mod sd;
 pub mod sh;
 pub mod sll;
 pub mod slli;
-pub mod slliw;
-pub mod sllw;
 pub mod slt;
 pub mod slti;
 pub mod sltiu;
 pub mod sltu;
 pub mod sra;
 pub mod srai;
-pub mod sraiw;
-pub mod sraw;
 pub mod srl;
 pub mod srli;
-pub mod srliw;
-pub mod srlw;
 pub mod sub;
-pub mod subw;
 pub mod sw;
 pub mod virtual_advice;
 pub mod virtual_assert_eq;
@@ -234,31 +246,97 @@ pub mod virtual_assert_valid_div0;
 pub mod virtual_assert_valid_unsigned_remainder;
 pub mod virtual_assert_word_alignment;
 pub mod virtual_change_divisor;
-pub mod virtual_change_divisor_w;
 pub mod virtual_lw;
 pub mod virtual_move;
 pub mod virtual_movsign;
 pub mod virtual_muli;
 pub mod virtual_pow2;
-pub mod virtual_pow2_w;
 pub mod virtual_pow2i;
-pub mod virtual_pow2i_w;
-pub mod virtual_rev8w;
 pub mod virtual_rotri;
-pub mod virtual_rotriw;
 pub mod virtual_shift_right_bitmask;
 pub mod virtual_shift_right_bitmaski;
-pub mod virtual_sign_extend_word;
 pub mod virtual_sra;
 pub mod virtual_srai;
 pub mod virtual_srl;
 pub mod virtual_srli;
 pub mod virtual_sw;
 pub mod virtual_xor_rot;
-pub mod virtual_xor_rotw;
-pub mod virtual_zero_extend_word;
 pub mod xor;
 pub mod xori;
+
+// RV64-only instruction modules
+#[cfg(feature = "rv64")]
+pub mod addiw;
+#[cfg(feature = "rv64")]
+pub mod addw;
+#[cfg(feature = "rv64")]
+pub mod amoaddd;
+#[cfg(feature = "rv64")]
+pub mod amoandd;
+#[cfg(feature = "rv64")]
+pub mod amomaxd;
+#[cfg(feature = "rv64")]
+pub mod amomaxud;
+#[cfg(feature = "rv64")]
+pub mod amomind;
+#[cfg(feature = "rv64")]
+pub mod amominud;
+#[cfg(feature = "rv64")]
+pub mod amoord;
+#[cfg(feature = "rv64")]
+pub mod amoswapd;
+#[cfg(feature = "rv64")]
+pub mod amoxord;
+#[cfg(feature = "rv64")]
+pub mod divuw;
+#[cfg(feature = "rv64")]
+pub mod divw;
+#[cfg(feature = "rv64")]
+pub mod ld;
+#[cfg(feature = "rv64")]
+pub mod lwu;
+#[cfg(feature = "rv64")]
+pub mod mulw;
+#[cfg(feature = "rv64")]
+pub mod remuw;
+#[cfg(feature = "rv64")]
+pub mod remw;
+#[cfg(feature = "rv64")]
+pub mod lrd;
+#[cfg(feature = "rv64")]
+pub mod scd;
+#[cfg(feature = "rv64")]
+pub mod sd;
+#[cfg(feature = "rv64")]
+pub mod slliw;
+#[cfg(feature = "rv64")]
+pub mod sllw;
+#[cfg(feature = "rv64")]
+pub mod sraiw;
+#[cfg(feature = "rv64")]
+pub mod sraw;
+#[cfg(feature = "rv64")]
+pub mod srliw;
+#[cfg(feature = "rv64")]
+pub mod srlw;
+#[cfg(feature = "rv64")]
+pub mod subw;
+#[cfg(feature = "rv64")]
+pub mod virtual_change_divisor_w;
+#[cfg(feature = "rv64")]
+pub mod virtual_pow2_w;
+#[cfg(feature = "rv64")]
+pub mod virtual_pow2i_w;
+#[cfg(feature = "rv64")]
+pub mod virtual_rev8w;
+#[cfg(feature = "rv64")]
+pub mod virtual_rotriw;
+#[cfg(feature = "rv64")]
+pub mod virtual_sign_extend_word;
+#[cfg(feature = "rv64")]
+pub mod virtual_xor_rotw;
+#[cfg(feature = "rv64")]
+pub mod virtual_zero_extend_word;
 
 #[cfg(any(test, feature = "test-utils"))]
 pub mod test;
@@ -572,6 +650,7 @@ macro_rules! define_rv32im_enums {
     };
 }
 
+#[cfg(feature = "rv64")]
 define_rv32im_enums! {
     instructions: [
         ADD, ADDI, AND, ANDI, ANDN, AUIPC, BEQ, BGE, BGEU, BLT, BLTU, BNE, DIV, DIVU,
@@ -598,6 +677,28 @@ define_rv32im_enums! {
         // XORROT
         VirtualXORROT32, VirtualXORROT24, VirtualXORROT16, VirtualXORROT63,
         VirtualXORROTW16, VirtualXORROTW12, VirtualXORROTW8, VirtualXORROTW7,
+    ]
+}
+
+#[cfg(not(feature = "rv64"))]
+define_rv32im_enums! {
+    instructions: [
+        // RV32IM base
+        ADD, ADDI, AND, ANDI, ANDN, AUIPC, BEQ, BGE, BGEU, BLT, BLTU, BNE, DIV, DIVU,
+        ECALL, FENCE, JAL, JALR, LB, LBU, LH, LHU, LUI, LW, MUL, MULH, MULHSU,
+        MULHU, OR, ORI, REM, REMU, SB, SH, SLL, SLLI, SLT, SLTI, SLTIU, SLTU,
+        SRA, SRAI, SRL, SRLI, SUB, SW, XOR, XORI,
+        // RV32A (Atomic Memory Operations)
+        LRW, SCW, AMOSWAPW, AMOADDW, AMOANDW, AMOORW, AMOXORW, AMOMINW, AMOMAXW, AMOMINUW, AMOMAXUW,
+        // Virtual (RV32 subset — no W-variants, no SignExtendWord/ZeroExtendWord)
+        VirtualAdvice, VirtualAssertEQ, VirtualAssertHalfwordAlignment, VirtualAssertWordAlignment, VirtualAssertLTE,
+        VirtualAssertValidDiv0, VirtualAssertValidUnsignedRemainder, VirtualAssertMulUNoOverflow,
+        VirtualChangeDivisor, VirtualLW, VirtualSW,
+        VirtualMove, VirtualMovsign, VirtualMULI, VirtualPow2, VirtualPow2I, VirtualROTRI,
+        VirtualShiftRightBitmask, VirtualShiftRightBitmaskI,
+        VirtualSRA, VirtualSRAI, VirtualSRL, VirtualSRLI,
+        // XORROT (64-bit rotations only — no W-variants)
+        VirtualXORROT32, VirtualXORROT24, VirtualXORROT16, VirtualXORROT63,
     ]
 }
 
@@ -701,19 +802,22 @@ impl Instruction {
                     0b000 => Ok(LB::new(instr, address, true, compressed).into()),
                     0b001 => Ok(LH::new(instr, address, true, compressed).into()),
                     0b010 => Ok(LW::new(instr, address, true, compressed).into()),
+                    #[cfg(feature = "rv64")]
                     0b011 => Ok(LD::new(instr, address, true, compressed).into()),
                     0b100 => Ok(LBU::new(instr, address, true, compressed).into()),
                     0b101 => Ok(LHU::new(instr, address, true, compressed).into()),
+                    #[cfg(feature = "rv64")]
                     0b110 => Ok(LWU::new(instr, address, true, compressed).into()),
                     _ => Err("Invalid load funct3"),
                 }
             }
             0b0100011 => {
-                // Store instructions (S-type): SB, SH, SW.
+                // Store instructions (S-type): SB, SH, SW, SD.
                 match (instr >> 12) & 0x7 {
                     0b000 => Ok(SB::new(instr, address, true, compressed).into()),
                     0b001 => Ok(SH::new(instr, address, true, compressed).into()),
                     0b010 => Ok(SW::new(instr, address, true, compressed).into()),
+                    #[cfg(feature = "rv64")]
                     0b011 => Ok(SD::new(instr, address, true, compressed).into()),
                     _ => Err("Invalid store funct3"),
                 }
@@ -750,6 +854,7 @@ impl Instruction {
                     }
                 }
             }
+            #[cfg(feature = "rv64")]
             0b0011011 => {
                 // RV64I I-type arithmetic instructions.
                 let funct3 = (instr >> 12) & 0x7;
@@ -790,6 +895,7 @@ impl Instruction {
                     _ => Err("Invalid R-type arithmetic instruction"),
                 }
             }
+            #[cfg(feature = "rv64")]
             0b0111011 => {
                 // RV64I R-type arithmetic instructions.
                 let funct3 = (instr >> 12) & 0x7;
@@ -822,46 +928,57 @@ impl Instruction {
                 match (funct3, funct5) {
                     // LR (Load Reserved)
                     (0b010, 0b00010) => Ok(LRW::new(instr, address, true, compressed).into()),
+                    #[cfg(feature = "rv64")]
                     (0b011, 0b00010) => Ok(LRD::new(instr, address, true, compressed).into()),
 
                     // SC (Store Conditional)
                     (0b010, 0b00011) => Ok(SCW::new(instr, address, true, compressed).into()),
+                    #[cfg(feature = "rv64")]
                     (0b011, 0b00011) => Ok(SCD::new(instr, address, true, compressed).into()),
 
                     // AMOSWAP
                     (0b010, 0b00001) => Ok(AMOSWAPW::new(instr, address, true, compressed).into()),
+                    #[cfg(feature = "rv64")]
                     (0b011, 0b00001) => Ok(AMOSWAPD::new(instr, address, true, compressed).into()),
 
                     // AMOADD
                     (0b010, 0b00000) => Ok(AMOADDW::new(instr, address, true, compressed).into()),
+                    #[cfg(feature = "rv64")]
                     (0b011, 0b00000) => Ok(AMOADDD::new(instr, address, true, compressed).into()),
 
                     // AMOAND
                     (0b010, 0b01100) => Ok(AMOANDW::new(instr, address, true, compressed).into()),
+                    #[cfg(feature = "rv64")]
                     (0b011, 0b01100) => Ok(AMOANDD::new(instr, address, true, compressed).into()),
 
                     // AMOOR
                     (0b010, 0b01000) => Ok(AMOORW::new(instr, address, true, compressed).into()),
+                    #[cfg(feature = "rv64")]
                     (0b011, 0b01000) => Ok(AMOORD::new(instr, address, true, compressed).into()),
 
                     // AMOXOR
                     (0b010, 0b00100) => Ok(AMOXORW::new(instr, address, true, compressed).into()),
+                    #[cfg(feature = "rv64")]
                     (0b011, 0b00100) => Ok(AMOXORD::new(instr, address, true, compressed).into()),
 
                     // AMOMIN
                     (0b010, 0b10000) => Ok(AMOMINW::new(instr, address, true, compressed).into()),
+                    #[cfg(feature = "rv64")]
                     (0b011, 0b10000) => Ok(AMOMIND::new(instr, address, true, compressed).into()),
 
                     // AMOMAX
                     (0b010, 0b10100) => Ok(AMOMAXW::new(instr, address, true, compressed).into()),
+                    #[cfg(feature = "rv64")]
                     (0b011, 0b10100) => Ok(AMOMAXD::new(instr, address, true, compressed).into()),
 
                     // AMOMINU
                     (0b010, 0b11000) => Ok(AMOMINUW::new(instr, address, true, compressed).into()),
+                    #[cfg(feature = "rv64")]
                     (0b011, 0b11000) => Ok(AMOMINUD::new(instr, address, true, compressed).into()),
 
                     // AMOMAXU
                     (0b010, 0b11100) => Ok(AMOMAXUW::new(instr, address, true, compressed).into()),
+                    #[cfg(feature = "rv64")]
                     (0b011, 0b11100) => Ok(AMOMAXUD::new(instr, address, true, compressed).into()),
 
                     _ => {
@@ -889,6 +1006,7 @@ impl Instruction {
             // 0x2B is reserved for external inlines
             0b0101011 => Ok(INLINE::new(instr, address, false, compressed).into()),
             // 0x5B is reserved for I-type virtual instructions.
+            #[cfg(feature = "rv64")]
             0b1011011 => {
                 let funct3 = (instr >> 12) & 0x7;
                 match funct3 {

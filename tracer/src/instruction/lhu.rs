@@ -6,6 +6,7 @@ use crate::emulator::cpu::{Cpu, Xlen};
 
 use super::andi::ANDI;
 use super::format::format_load::FormatLoad;
+#[cfg(feature = "rv64")]
 use super::ld::LD;
 use super::sll::SLL;
 use super::slli::SLLI;
@@ -68,7 +69,10 @@ impl RISCVTrace for LHU {
     ) -> Vec<Instruction> {
         match xlen {
             Xlen::Bit32 => self.inline_sequence_32(allocator),
+            #[cfg(feature = "rv64")]
             Xlen::Bit64 => self.inline_sequence_64(allocator),
+            #[cfg(not(feature = "rv64"))]
+            _ => unreachable!("RV64 not supported in rv32 build"),
         }
     }
 }
@@ -108,6 +112,7 @@ impl LHU {
     /// 1. XOR with 6 for position calculation
     /// 2. Shift halfword to bits [63:48]
     /// 3. Logical right shift by 48 to zero-extend
+    #[cfg(feature = "rv64")]
     fn inline_sequence_64(&self, allocator: &VirtualRegisterAllocator) -> Vec<Instruction> {
         // Virtual registers used in sequence
         let v_address = allocator.allocate();

@@ -68,6 +68,8 @@ where
             .challenge_vector_optimized::<F>(num_rounds_x);
 
         let transcript = &mut *state_manager.transcript.borrow_mut();
+        #[cfg(not(feature = "rv64"))]
+        let transcript_before_sumcheck = transcript.clone();
         let (outer_sumcheck_proof, outer_sumcheck_r, outer_sumcheck_claims) =
             SumcheckInstanceProof::<F, ProofTranscript>::prove_spartan_small_value::<
                 NUM_SVO_ROUNDS
@@ -80,6 +82,78 @@ where
             );
 
         let outer_sumcheck_r: Vec<F::Challenge> = outer_sumcheck_r.into_iter().rev().collect();
+
+        #[cfg(not(feature = "rv64"))]
+        {
+            let tau_bound_rx = EqPolynomial::<F>::mle(&tau, &outer_sumcheck_r);
+            let claim_outer_final_expected = tau_bound_rx
+                * (outer_sumcheck_claims[0] * outer_sumcheck_claims[1] - outer_sumcheck_claims[2]);
+            let mut transcript_check = transcript_before_sumcheck.clone();
+            let (claim_outer_final, verify_r) = outer_sumcheck_proof
+                .verify(F::zero(), num_rounds_x, 3, &mut transcript_check)
+                .expect("stage1 self-check verify failed");
+            let verify_r_reversed: Vec<F::Challenge> = verify_r.into_iter().rev().collect();
+            let tau_bound_rx_unreversed = EqPolynomial::<F>::mle(&tau, &verify_r_reversed.iter().rev().cloned().collect::<Vec<_>>());
+            let claim_outer_final_expected_unreversed = tau_bound_rx_unreversed
+                * (outer_sumcheck_claims[0] * outer_sumcheck_claims[1] - outer_sumcheck_claims[2]);
+            if claim_outer_final != claim_outer_final_expected || verify_r_reversed != outer_sumcheck_r
+            {
+                eprintln!(
+                    "stage1 prover self-check mismatch: claim_outer_final={:?} expected={:?} expected_unreversed={:?} tau_bound_rx={:?} tau_bound_rx_unreversed={:?} claims={:?} r_match={}",
+                    claim_outer_final,
+                    claim_outer_final_expected,
+                    claim_outer_final_expected_unreversed,
+                    tau_bound_rx,
+                    tau_bound_rx_unreversed,
+                    outer_sumcheck_claims,
+                    verify_r_reversed == outer_sumcheck_r
+                );
+            }
+
+            let mut transcript_no_svo = transcript_before_sumcheck.clone();
+            let (no_svo_proof, no_svo_r, no_svo_claims) =
+                SumcheckInstanceProof::<F, ProofTranscript>::prove_spartan_no_svo(
+                    &preprocessing.shared,
+                    trace,
+                    num_rounds_x,
+                    &tau,
+                    &mut transcript_no_svo,
+                );
+            let no_svo_r_reversed: Vec<F::Challenge> = no_svo_r.into_iter().rev().collect();
+            let no_svo_tau_bound_rx = EqPolynomial::<F>::mle(&tau, &no_svo_r_reversed);
+            let no_svo_expected = no_svo_tau_bound_rx
+                * (no_svo_claims[0] * no_svo_claims[1] - no_svo_claims[2]);
+            let mut transcript_no_svo_check = transcript_before_sumcheck.clone();
+            let (no_svo_claim_outer_final, no_svo_verify_r) = no_svo_proof
+                .verify(F::zero(), num_rounds_x, 3, &mut transcript_no_svo_check)
+                .expect("stage1 no-svo self-check verify failed");
+            let no_svo_verify_r_reversed: Vec<F::Challenge> =
+                no_svo_verify_r.into_iter().rev().collect();
+            let no_svo_tau_bound_rx_unreversed = EqPolynomial::<F>::mle(
+                &tau,
+                &no_svo_verify_r_reversed
+                    .iter()
+                    .rev()
+                    .cloned()
+                    .collect::<Vec<_>>(),
+            );
+            let no_svo_expected_unreversed = no_svo_tau_bound_rx_unreversed
+                * (no_svo_claims[0] * no_svo_claims[1] - no_svo_claims[2]);
+            if no_svo_claim_outer_final != no_svo_expected
+                || no_svo_verify_r_reversed != no_svo_r_reversed
+            {
+                eprintln!(
+                    "stage1 no-svo self-check mismatch: claim_outer_final={:?} expected={:?} expected_unreversed={:?} tau_bound_rx={:?} tau_bound_rx_unreversed={:?} claims={:?} r_match={}",
+                    no_svo_claim_outer_final,
+                    no_svo_expected,
+                    no_svo_expected_unreversed,
+                    no_svo_tau_bound_rx,
+                    no_svo_tau_bound_rx_unreversed,
+                    no_svo_claims,
+                    no_svo_verify_r_reversed == no_svo_r_reversed
+                );
+            }
+        }
 
         ProofTranscript::append_scalars(transcript, &outer_sumcheck_claims);
 
@@ -241,6 +315,18 @@ where
         let tau_bound_rx = EqPolynomial::<F>::mle(&tau, &outer_sumcheck_r_reversed);
         let claim_outer_final_expected = tau_bound_rx * (claim_Az * claim_Bz - claim_Cz);
         if claim_outer_final != claim_outer_final_expected {
+            #[cfg(not(feature = "rv64"))]
+            eprintln!(
+                "stage1 mismatch: claim_outer_final={:?} expected={:?} tau_bound_rx={:?} claim_Az={:?} claim_Bz={:?} claim_Cz={:?} tau_len={} r_len={}",
+                claim_outer_final,
+                claim_outer_final_expected,
+                tau_bound_rx,
+                claim_Az,
+                claim_Bz,
+                claim_Cz,
+                tau.len(),
+                outer_sumcheck_r_reversed.len()
+            );
             return Err(anyhow::anyhow!("Invalid outer sumcheck claim"));
         }
 

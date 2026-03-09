@@ -427,7 +427,8 @@ impl<F: JoltField> ReadRafSumcheck<F> {
             SumcheckId::RegistersValEvaluation,
         );
         let (_, r_cycle_3) = r.split_at((REGISTER_COUNT as usize).log_2());
-        [r_cycle_1.r, r_cycle_2.r, r_cycle_3.r]
+        let result = [r_cycle_1.r, r_cycle_2.r, r_cycle_3.r];
+        result
     }
 
     pub fn get_r_cycle_verif(
@@ -446,7 +447,8 @@ impl<F: JoltField> ReadRafSumcheck<F> {
             SumcheckId::RegistersValEvaluation,
         );
         let (_, r_cycle_3) = r.split_at((REGISTER_COUNT as usize).log_2());
-        [r_cycle_1.r, r_cycle_2.r, r_cycle_3.r]
+        let result = [r_cycle_1.r, r_cycle_2.r, r_cycle_3.r];
+        result
     }
 
     /// Returns a vec of evaluations:
@@ -466,11 +468,23 @@ impl<F: JoltField> ReadRafSumcheck<F> {
                     ..
                 } = instruction.normalize();
 
+                let flags = instruction.circuit_flags();
+
+                // For rv32, truncate the immediate to match Spartan witness semantics
+                // (R1CSCycleInputs::from_trace truncates to u32/i32 for rv32)
+                #[cfg(not(feature = "rv64"))]
+                let imm_i128 = if flags[CircuitFlags::Branch] {
+                    operands.imm as i32 as i128
+                } else {
+                    operands.imm as common::constants::XlenInt as i128
+                };
+                #[cfg(feature = "rv64")]
+                let imm_i128 = operands.imm;
+
                 let mut linear_combination = F::zero();
                 linear_combination += F::from_u64(unexpanded_pc as u64);
-                linear_combination += operands.imm.field_mul(gamma_powers[1]);
+                linear_combination += imm_i128.field_mul(gamma_powers[1]);
                 linear_combination += (operands.rd as u64).field_mul(gamma_powers[2]);
-                let flags = instruction.circuit_flags();
                 // sanity check
                 assert!(
                     !flags[CircuitFlags::IsCompressed]
@@ -666,12 +680,21 @@ impl<F: JoltField> ReadRafSumcheck<F> {
                     operands,
                     ..
                 } = instruction.normalize();
+                let flags = instruction.circuit_flags();
+
+                #[cfg(not(feature = "rv64"))]
+                let imm_i128 = if flags[CircuitFlags::Branch] {
+                    operands.imm as i32 as i128
+                } else {
+                    operands.imm as common::constants::XlenInt as i128
+                };
+                #[cfg(feature = "rv64")]
+                let imm_i128 = operands.imm;
 
                 let mut linear_combination = F::zero();
                 linear_combination += F::from_u64(unexpanded_pc as u64);
-                linear_combination += operands.imm.field_mul(gamma_powers[1]);
+                linear_combination += imm_i128.field_mul(gamma_powers[1]);
                 linear_combination += (operands.rd as u64).field_mul(gamma_powers[2]);
-                let flags = instruction.circuit_flags();
                 assert!(
                     !flags[CircuitFlags::IsCompressed]
                         || !flags[CircuitFlags::DoNotUpdateUnexpandedPC]
@@ -1005,6 +1028,7 @@ impl<F: JoltField, T: Transcript> SumcheckInstance<F, T> for ReadRafSumcheck<F> 
         let (r_address, r_cycle) = opening_point.clone().split_at(self.log_K);
 
         for i in 0..self.d {
+            let claim = ps.ra[i].final_sumcheck_claim();
             let r_address = &r_address.r[self.log_K_chunk * i..self.log_K_chunk * (i + 1)];
             accumulator.borrow_mut().append_sparse(
                 transcript,
@@ -1012,7 +1036,7 @@ impl<F: JoltField, T: Transcript> SumcheckInstance<F, T> for ReadRafSumcheck<F> 
                 SumcheckId::BytecodeReadRaf,
                 r_address.to_vec(),
                 r_cycle.clone().into(),
-                vec![ps.ra[i].final_sumcheck_claim()],
+                vec![claim],
             );
         }
     }

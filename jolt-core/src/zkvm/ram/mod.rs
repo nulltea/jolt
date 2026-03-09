@@ -32,7 +32,7 @@ use crate::{
 
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use common::{
-    constants::{BYTES_PER_INSTRUCTION, RAM_START_ADDRESS},
+    constants::{BYTES_PER_INSTRUCTION, RAM_START_ADDRESS, RAM_WORD_SIZE},
     jolt_device::MemoryLayout,
 };
 use rayon::prelude::*;
@@ -67,18 +67,19 @@ impl RAMPreprocessing {
             .unwrap_or(0)
             + (BYTES_PER_INSTRUCTION as u64 - 1);
 
-        let num_words = max_bytecode_address.next_multiple_of(8) / 8 - min_bytecode_address / 8 + 1;
+        let ws = RAM_WORD_SIZE;
+        let num_words = max_bytecode_address.next_multiple_of(ws) / ws - min_bytecode_address / ws + 1;
         let mut bytecode_words = vec![0u64; num_words as usize];
         // Convert bytes into words and populate `bytecode_words`
         for chunk in
-            memory_init.chunk_by(|(address_a, _), (address_b, _)| address_a / 8 == address_b / 8)
+            memory_init.chunk_by(|(address_a, _), (address_b, _)| address_a / ws == address_b / ws)
         {
             let mut word = [0u8; 8];
             for (address, byte) in chunk {
-                word[(address % 8) as usize] = *byte;
+                word[(address % ws) as usize] = *byte;
             }
             let word = u64::from_le_bytes(word);
-            let remapped_index = (chunk[0].0 / 8 - min_bytecode_address / 8) as usize;
+            let remapped_index = (chunk[0].0 / ws - min_bytecode_address / ws) as usize;
             bytecode_words[remapped_index] = word;
         }
 
@@ -89,6 +90,15 @@ impl RAMPreprocessing {
     }
 }
 
+/// Convert a chunk of bytes (up to RAM_WORD_SIZE bytes) into a u64 word (little-endian).
+pub fn bytes_to_ram_word(bytes: &[u8]) -> u64 {
+    let mut word = [0u8; 8];
+    for (i, byte) in bytes.iter().enumerate() {
+        word[i] = *byte;
+    }
+    u64::from_le_bytes(word)
+}
+
 /// Returns Some(address) if there was read/write
 /// Returns None if there was no read/write
 pub fn remap_address(address: u64, memory_layout: &MemoryLayout) -> Option<u64> {
@@ -97,7 +107,7 @@ pub fn remap_address(address: u64, memory_layout: &MemoryLayout) -> Option<u64> 
     }
 
     if address >= memory_layout.trusted_advice_start {
-        Some((address - memory_layout.trusted_advice_start) / 8 + 1)
+        Some((address - memory_layout.trusted_advice_start) / common::constants::RAM_WORD_SIZE + 1)
     } else {
         panic!("Unexpected address {address}")
     }
@@ -139,11 +149,16 @@ impl RamDag {
         // Note that `final_memory` only contains memory at addresses >= `RAM_START_ADDRESS`
         // so we will still need to populate `final_memory_state` with the contents of
         // `program_io`, which lives at addresses < `RAM_START_ADDRESS`
+        let ws = RAM_WORD_SIZE;
         final_memory_state[dram_start_index..]
             .par_iter_mut()
             .enumerate()
             .for_each(|(k, word)| {
-                *word = final_memory.read_doubleword(8 * k as u64);
+                if ws == 8 {
+                    *word = final_memory.read_doubleword(ws * k as u64);
+                } else {
+                    *word = final_memory.read_word(ws * k as u64) as u64;
+                }
             });
 
         index = remap_address(
@@ -151,12 +166,8 @@ impl RamDag {
             &program_io.memory_layout,
         )
         .unwrap() as usize;
-        for chunk in program_io.trusted_advice.chunks(8) {
-            let mut word = [0u8; 8];
-            for (i, byte) in chunk.iter().enumerate() {
-                word[i] = *byte;
-            }
-            let word = u64::from_le_bytes(word);
+        for chunk in program_io.trusted_advice.chunks(ws as usize) {
+            let word = bytes_to_ram_word(chunk);
             initial_memory_state[index] = word;
             final_memory_state[index] = word;
             index += 1;
@@ -167,12 +178,8 @@ impl RamDag {
             &program_io.memory_layout,
         )
         .unwrap() as usize;
-        for chunk in program_io.untrusted_advice.chunks(8) {
-            let mut word = [0u8; 8];
-            for (i, byte) in chunk.iter().enumerate() {
-                word[i] = *byte;
-            }
-            let word = u64::from_le_bytes(word);
+        for chunk in program_io.untrusted_advice.chunks(ws as usize) {
+            let word = bytes_to_ram_word(chunk);
             initial_memory_state[index] = word;
             final_memory_state[index] = word;
             index += 1;
@@ -185,12 +192,8 @@ impl RamDag {
         .unwrap() as usize;
         // Convert input bytes into words and populate
         // `initial_memory_state` and `final_memory_state`
-        for chunk in program_io.inputs.chunks(8) {
-            let mut word = [0u8; 8];
-            for (i, byte) in chunk.iter().enumerate() {
-                word[i] = *byte;
-            }
-            let word = u64::from_le_bytes(word);
+        for chunk in program_io.inputs.chunks(ws as usize) {
+            let word = bytes_to_ram_word(chunk);
             initial_memory_state[index] = word;
             final_memory_state[index] = word;
             index += 1;
@@ -203,12 +206,8 @@ impl RamDag {
             &program_io.memory_layout,
         )
         .unwrap() as usize;
-        for chunk in program_io.outputs.chunks(8) {
-            let mut word = [0u8; 8];
-            for (i, byte) in chunk.iter().enumerate() {
-                word[i] = *byte;
-            }
-            let word = u64::from_le_bytes(word);
+        for chunk in program_io.outputs.chunks(ws as usize) {
+            let word = bytes_to_ram_word(chunk);
             final_memory_state[index] = word;
             index += 1;
         }
@@ -272,6 +271,7 @@ impl RamDag {
 
         let K = state_manager.ram_K;
 
+        let ws = RAM_WORD_SIZE as usize;
         let mut initial_memory_state = vec![0; K];
         // Copy bytecode
         let mut index = remap_address(
@@ -291,12 +291,8 @@ impl RamDag {
         .unwrap() as usize;
         // Convert input bytes into words and populate
         // `initial_memory_state` and `final_memory_state`
-        for chunk in program_io.inputs.chunks(8) {
-            let mut word = [0u8; 8];
-            for (i, byte) in chunk.iter().enumerate() {
-                word[i] = *byte;
-            }
-            let word = u64::from_le_bytes(word);
+        for chunk in program_io.inputs.chunks(ws) {
+            let word = bytes_to_ram_word(chunk);
             initial_memory_state[index] = word;
             index += 1;
         }
@@ -329,7 +325,7 @@ pub fn prover_accumulate_advice<F, ProofTranscript, PCS>(
         let (r_address, _) = r.split_at(state_manager.ram_K.log_2());
 
         let total_variables = state_manager.ram_K.log_2();
-        let advice_variables = (max_advice_size / 8).next_power_of_two().log_2();
+        let advice_variables = (max_advice_size / RAM_WORD_SIZE as usize).next_power_of_two().log_2();
 
         // Use the last number_of_vals elements for evaluation
         let eval = advice_poly.evaluate(&r_address.r[total_variables - advice_variables..]);
@@ -396,7 +392,7 @@ pub fn verifier_accumulate_advice<F, ProofTranscript, PCS>(
         let (r_address, _) = r.split_at(state_manager.ram_K.log_2());
 
         let total_vars = r_address.r.len();
-        let advice_variables = (max_advice_size / 8).next_power_of_two().log_2();
+        let advice_variables = (max_advice_size / RAM_WORD_SIZE as usize).next_power_of_two().log_2();
 
         let mut advice_point = r_address.clone();
         advice_point.r = r_address.r[total_vars - advice_variables..].to_vec();

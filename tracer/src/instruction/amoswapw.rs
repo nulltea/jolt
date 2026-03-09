@@ -93,6 +93,7 @@ impl RISCVTrace for AMOSWAPW {
                 asm.emit_i::<super::virtual_move::VirtualMove>(self.operands.rd, *v_rd, 0);
                 asm.finalize()
             }
+            #[cfg(feature = "rv64")]
             Xlen::Bit64 => {
                 let v_mask = allocator.allocate();
                 let v_dword_address = allocator.allocate();
@@ -122,6 +123,8 @@ impl RISCVTrace for AMOSWAPW {
                 );
                 asm.finalize()
             }
+            #[cfg(not(feature = "rv64"))]
+            _ => unreachable!("RV64 not supported in rv32 build"),
         }
     }
 }

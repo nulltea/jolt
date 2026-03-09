@@ -21,6 +21,11 @@ impl<const XLEN: usize, const ROTATION: u32> JoltLookupTable
                 let xor_result = x as u8 ^ y as u8;
                 xor_result.rotate_right(ROTATION) as u64
             }
+            32 => {
+                let (x, y) = uninterleave_bits(index);
+                let xor_result = x as u32 ^ y as u32;
+                xor_result.rotate_right(ROTATION) as u64
+            }
             64 => {
                 let (x, y) = uninterleave_bits(index);
                 let xor_result = x ^ y;
@@ -56,7 +61,6 @@ impl<const XLEN: usize, const ROTATION: u32> PrefixSuffixDecomposition<XLEN>
     for VirtualXORROTTable<XLEN, ROTATION>
 {
     fn suffixes(&self) -> Vec<Suffixes> {
-        debug_assert_eq!(XLEN, 64);
         match ROTATION {
             16 => vec![Suffixes::One, Suffixes::XorRot16],
             24 => vec![Suffixes::One, Suffixes::XorRot24],
@@ -67,7 +71,6 @@ impl<const XLEN: usize, const ROTATION: u32> PrefixSuffixDecomposition<XLEN>
     }
 
     fn combine<F: JoltField>(&self, prefixes: &[PrefixEval<F>], suffixes: &[SuffixEval<F>]) -> F {
-        debug_assert_eq!(XLEN, 64);
         debug_assert_eq!(self.suffixes().len(), suffixes.len());
         let [one, xor_rot] = suffixes.try_into().unwrap();
         match ROTATION {

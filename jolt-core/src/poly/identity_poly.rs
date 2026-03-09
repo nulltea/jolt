@@ -396,18 +396,22 @@ impl<F: JoltField> PrefixPolynomial<F> for OperandPolynomial<F> {
     }
 }
 
-/// Polynomial that unmaps RAM addresses: k -> (k-1)*8 + start_address
+/// Polynomial that unmaps RAM addresses: k -> (k-1)*WORD_SIZE + start_address
+/// where WORD_SIZE = XLEN/8 (4 for rv32, 8 for rv64).
 #[derive(Allocative)]
 pub struct UnmapRamAddressPolynomial<F: JoltField> {
     start_address: u64,
+    word_size: u64,
     int_poly: IdentityPolynomial<F>,
 }
 
 impl<F: JoltField> UnmapRamAddressPolynomial<F> {
     pub fn new(num_vars: usize, start_address: u64) -> Self {
-        assert!(start_address > 8);
+        let word_size = common::constants::RAM_WORD_SIZE;
+        assert!(start_address > word_size);
         UnmapRamAddressPolynomial {
             start_address,
+            word_size,
             int_poly: IdentityPolynomial::new(num_vars),
         }
     }
@@ -428,7 +432,7 @@ impl<F: JoltField> PolynomialBinding<F> for UnmapRamAddressPolynomial<F> {
     }
 
     fn final_sumcheck_claim(&self) -> F {
-        self.int_poly.final_sumcheck_claim().mul_u64(8) + F::from_u64(self.start_address - 8)
+        self.int_poly.final_sumcheck_claim().mul_u64(self.word_size) + F::from_u64(self.start_address - self.word_size)
     }
 }
 
@@ -438,7 +442,7 @@ impl<F: JoltField> PolynomialEvaluation<F> for UnmapRamAddressPolynomial<F> {
         C: Copy + Send + Sync + Into<F> + ChallengeFieldOps<F>,
         F: FieldChallengeOps<C>,
     {
-        self.int_poly.evaluate(r).mul_u64(8) + F::from_u64(self.start_address - 8)
+        self.int_poly.evaluate(r).mul_u64(self.word_size) + F::from_u64(self.start_address - self.word_size)
     }
 
     fn batch_evaluate<C>(_polys: &[&Self], _r: &[C]) -> Vec<F>
@@ -451,9 +455,10 @@ impl<F: JoltField> PolynomialEvaluation<F> for UnmapRamAddressPolynomial<F> {
 
     fn sumcheck_evals(&self, index: usize, degree: usize, order: BindingOrder) -> Vec<F> {
         let evals = self.int_poly.sumcheck_evals(index, degree, order);
+        let ws = self.word_size;
         evals
             .into_iter()
-            .map(|l| l.mul_u64(8) + F::from_u64(self.start_address - 8))
+            .map(|l| l.mul_u64(ws) + F::from_u64(self.start_address - ws))
             .collect()
     }
 }

@@ -1072,19 +1072,10 @@ impl<const NUM_SVO_ROUNDS: usize, F: JoltField> SpartanInterleavedPolynomial<NUM
     }
 
     pub fn final_sumcheck_evals(&self) -> [F; 3] {
-        let mut final_az_eval = F::zero();
-        let mut final_bz_eval = F::zero();
-        let mut final_cz_eval = F::zero();
-        for i in 0..3 {
-            if let Some(coeff) = self.bound_coeffs.get(i) {
-                match coeff.index {
-                    0 => final_az_eval = coeff.value,
-                    1 => final_bz_eval = coeff.value,
-                    2 => final_cz_eval = coeff.value,
-                    _ => {}
-                }
-            }
+        let mut out = [F::zero(), F::zero(), F::zero()];
+        for coeff in self.bound_coeffs.iter() {
+            out[coeff.index % 3] = coeff.value;
         }
-        [final_az_eval, final_bz_eval, final_cz_eval]
+        out
     }
 }

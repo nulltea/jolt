@@ -92,6 +92,21 @@ impl<F: JoltField, T: Transcript> SumcheckInstance<F, T> for HammingWeightSumche
     #[tracing::instrument(skip_all, name = "InstructionHammingWeight::compute_prover_message")]
     fn compute_prover_message(&mut self, _round: usize, _previous_claim: F) -> Vec<F> {
         let prover_state = self.prover_state.as_ref().unwrap();
+
+        #[cfg(not(feature = "rv64"))]
+        {
+            // Verify total sum for this round
+            let total: F = prover_state.ra.iter().zip(self.gamma.iter()).map(|(ra, gamma)| {
+                let s: F = (0..ra.len()).map(|j| ra.get_bound_coeff(j)).sum();
+                s * gamma
+            }).sum();
+            let f0: F = prover_state.ra.iter().zip(self.gamma.iter()).map(|(ra, gamma)| {
+                let s: F = (0..ra.len() / 2).map(|i| ra.get_bound_coeff(2 * i)).sum();
+                s * gamma
+            }).sum();
+            eprintln!("  HammingWeight round {_round}: len={} total={total:?} f0={f0:?} prev_claim={_previous_claim:?}", prover_state.ra[0].len());
+        }
+
         let result = prover_state
             .ra
             .iter()
@@ -125,7 +140,7 @@ impl<F: JoltField, T: Transcript> SumcheckInstance<F, T> for HammingWeightSumche
         accumulator: Option<Rc<RefCell<VerifierOpeningAccumulator<F>>>>,
         _r: &[F::Challenge],
     ) -> F {
-        let ra_claims = (0..D).map(|i| {
+        let ra_claims: Vec<F> = (0..D).map(|i| {
             let accumulator = accumulator.as_ref().unwrap();
             let accumulator = accumulator.borrow();
             accumulator
@@ -134,12 +149,22 @@ impl<F: JoltField, T: Transcript> SumcheckInstance<F, T> for HammingWeightSumche
                     SumcheckId::InstructionHammingWeight,
                 )
                 .1
-        });
+        }).collect();
+
+        #[cfg(not(feature = "rv64"))]
+        {
+            for (i, claim) in ra_claims.iter().enumerate() {
+                eprintln!("  HammingWeight verifier ra_claim[{i}]={claim:?}");
+            }
+            for (i, g) in self.gamma.iter().enumerate() {
+                eprintln!("  HammingWeight verifier gamma[{i}]={g:?}");
+            }
+        }
 
         self.gamma
             .iter()
-            .zip(ra_claims)
-            .map(|(gamma, ra)| ra * gamma)
+            .zip(ra_claims.iter())
+            .map(|(gamma, ra)| *ra * gamma)
             .sum()
     }
 
@@ -162,6 +187,19 @@ impl<F: JoltField, T: Transcript> SumcheckInstance<F, T> for HammingWeightSumche
             .iter()
             .map(|ra| ra.final_sumcheck_claim())
             .collect::<Vec<F>>();
+        #[cfg(not(feature = "rv64"))]
+        {
+            for (i, claim) in ra_claims.iter().enumerate() {
+                eprintln!("  HammingWeight prover ra_claim[{i}]={claim:?}");
+            }
+            let expected: F = self.gamma.iter().zip(ra_claims.iter()).map(|(g, r)| *g * r).sum();
+            // Also compute total sum to verify input claim
+            let total: F = ps.ra.iter().zip(self.gamma.iter()).map(|(ra, gamma)| {
+                let s: F = (0..ra.len()).map(|j| ra.get_bound_coeff(j)).sum();
+                s * gamma
+            }).sum();
+            eprintln!("  HammingWeight prover expected_output={expected:?} total_sum={total:?} input_claim={:?}", self.gamma.iter().sum::<F>());
+        }
         let r_cycle = accumulator
             .borrow()
             .get_virtual_polynomial_opening(

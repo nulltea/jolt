@@ -13,6 +13,7 @@ use positive_remainder_less_than_divisor::PositiveRemainderLessThanDivisorPrefix
 use pow2::Pow2Prefix;
 use pow2_w::Pow2WPrefix;
 use rayon::prelude::*;
+#[cfg(feature = "rv64")]
 use rev8w::Rev8WPrefix;
 use right_shift::RightShiftPrefix;
 use right_shift_w::RightShiftWPrefix;
@@ -76,6 +77,7 @@ pub mod positive_remainder_equals_divisor;
 pub mod positive_remainder_less_than_divisor;
 pub mod pow2;
 pub mod pow2_w;
+#[cfg(feature = "rv64")]
 pub mod rev8w;
 pub mod right_is_zero;
 pub mod right_msb;
@@ -160,6 +162,7 @@ pub enum Prefixes {
     Lsb,
     Pow2,
     Pow2W,
+    #[cfg(feature = "rv64")]
     Rev8W,
     RightShift,
     SignExtension,
@@ -291,6 +294,7 @@ impl Prefixes {
             Prefixes::Lsb => LsbPrefix::<XLEN>::prefix_mle(checkpoints, r_x, c, b, j),
             Prefixes::Pow2 => Pow2Prefix::<XLEN>::prefix_mle(checkpoints, r_x, c, b, j),
             Prefixes::Pow2W => Pow2WPrefix::<XLEN>::prefix_mle(checkpoints, r_x, c, b, j),
+            #[cfg(feature = "rv64")]
             Prefixes::Rev8W => Rev8WPrefix::prefix_mle(checkpoints, r_x, c, b, j),
             Prefixes::RightShift => RightShiftPrefix::prefix_mle(checkpoints, r_x, c, b, j),
             Prefixes::SignExtension => {
@@ -486,6 +490,7 @@ impl Prefixes {
             Prefixes::Pow2W => {
                 Pow2WPrefix::<XLEN>::update_prefix_checkpoint(checkpoints, r_x, r_y, j)
             }
+            #[cfg(feature = "rv64")]
             Prefixes::Rev8W => Rev8WPrefix::update_prefix_checkpoint(checkpoints, r_x, r_y, j),
             Prefixes::RightShift => {
                 RightShiftPrefix::update_prefix_checkpoint(checkpoints, r_x, r_y, j)

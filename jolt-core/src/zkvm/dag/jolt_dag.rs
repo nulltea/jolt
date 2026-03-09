@@ -69,7 +69,7 @@ impl JoltDAG {
                         .program_io
                         .memory_layout
                         .max_untrusted_advice_size as usize
-                        / 8,
+                        / common::constants::RAM_WORD_SIZE as usize,
                 );
                 let hints = Self::commit_untrusted_advice(&mut state_manager);
                 Some(hints)
@@ -142,6 +142,13 @@ impl JoltDAG {
             .chain(lookups_dag.stage2_prover_instances(&mut state_manager))
             .collect();
 
+        if let Some(limit) = std::env::var("CO_JOLT2_STAGE2_VERIFY_LIMIT")
+            .ok()
+            .and_then(|value| value.parse::<usize>().ok())
+        {
+            stage2_instances.truncate(limit.min(stage2_instances.len()));
+        }
+
         #[cfg(feature = "allocative")]
         {
             let mut flamegraph = FlameGraphBuilder::default();
@@ -156,6 +163,19 @@ impl JoltDAG {
                 .iter_mut()
                 .map(|instance| &mut **instance as &mut dyn SumcheckInstance<F, ProofTranscript>)
                 .collect();
+
+        #[cfg(not(feature = "rv64"))]
+        {
+            eprintln!("PROVER stage2: {} instances", stage2_instances_mut.len());
+            for (i, inst) in stage2_instances_mut.iter().enumerate() {
+                eprintln!(
+                    "  instance[{i}]: rounds={} degree={} input_claim={:?}",
+                    inst.num_rounds(),
+                    inst.degree(),
+                    inst.input_claim()
+                );
+            }
+        }
 
         let transcript = state_manager.get_transcript();
         let accumulator = state_manager.get_prover_accumulator();
@@ -434,10 +454,30 @@ impl JoltDAG {
             .chain(ram_dag.stage2_verifier_instances(&mut state_manager))
             .chain(lookups_dag.stage2_verifier_instances(&mut state_manager))
             .collect();
+        let mut stage2_instances = stage2_instances;
+        if let Some(limit) = std::env::var("CO_JOLT2_STAGE2_LIMIT")
+            .ok()
+            .and_then(|value| value.parse::<usize>().ok())
+        {
+            stage2_instances.truncate(limit.min(stage2_instances.len()));
+        }
         let stage2_instances_ref: Vec<&dyn SumcheckInstance<F, ProofTranscript>> = stage2_instances
             .iter()
             .map(|instance| &**instance as &dyn SumcheckInstance<F, ProofTranscript>)
             .collect();
+
+        #[cfg(not(feature = "rv64"))]
+        {
+            eprintln!("VERIFIER stage2: {} instances", stage2_instances_ref.len());
+            for (i, inst) in stage2_instances_ref.iter().enumerate() {
+                eprintln!(
+                    "  instance[{i}]: rounds={} degree={} input_claim={:?}",
+                    inst.num_rounds(),
+                    inst.degree(),
+                    inst.input_claim()
+                );
+            }
+        }
 
         let proofs = state_manager.proofs.borrow();
         let stage2_proof_data = proofs
@@ -459,6 +499,10 @@ impl JoltDAG {
         .context("Stage 2")?;
 
         drop(proofs);
+
+        if std::env::var("CO_JOLT2_STOP_VERIFY_AFTER_STAGE2").is_ok() {
+            return Ok(());
+        }
 
         // Stage 3:
         let stage3_instances: Vec<_> = std::iter::empty()
@@ -510,6 +554,19 @@ impl JoltDAG {
             ProofData::SumcheckProof(proof) => proof,
             _ => panic!("Invalid proof type for stage 4"),
         };
+
+        #[cfg(not(feature = "rv64"))]
+        {
+            eprintln!("VERIFIER stage4: {} instances", stage4_instances_ref.len());
+            for (i, inst) in stage4_instances_ref.iter().enumerate() {
+                eprintln!(
+                    "  instance[{i}]: rounds={} degree={} input_claim={:?}",
+                    inst.num_rounds(),
+                    inst.degree(),
+                    inst.input_claim()
+                );
+            }
+        }
 
         let _r_stage4 = BatchedSumcheck::verify(
             stage4_proof,
@@ -624,16 +681,13 @@ impl JoltDAG {
             return None;
         }
 
+        let ws = common::constants::RAM_WORD_SIZE as usize;
         let mut initial_memory_state =
-            vec![0; program_io.memory_layout.max_untrusted_advice_size as usize / 8];
+            vec![0; program_io.memory_layout.max_untrusted_advice_size as usize / ws];
 
         let mut index = 1;
-        for chunk in program_io.untrusted_advice.chunks(8) {
-            let mut word = [0u8; 8];
-            for (i, byte) in chunk.iter().enumerate() {
-                word[i] = *byte;
-            }
-            let word = u64::from_le_bytes(word);
+        for chunk in program_io.untrusted_advice.chunks(ws) {
+            let word = crate::zkvm::ram::bytes_to_ram_word(chunk);
             initial_memory_state[index] = word;
             index += 1;
         }
@@ -663,16 +717,13 @@ impl JoltDAG {
             return;
         }
 
+        let ws = common::constants::RAM_WORD_SIZE as usize;
         let mut initial_memory_state =
-            vec![0; program_io.memory_layout.max_trusted_advice_size as usize / 8];
+            vec![0; program_io.memory_layout.max_trusted_advice_size as usize / ws];
 
         let mut index = 1;
-        for chunk in program_io.trusted_advice.chunks(8) {
-            let mut word = [0u8; 8];
-            for (i, byte) in chunk.iter().enumerate() {
-                word[i] = *byte;
-            }
-            let word = u64::from_le_bytes(word);
+        for chunk in program_io.trusted_advice.chunks(ws) {
+            let word = crate::zkvm::ram::bytes_to_ram_word(chunk);
             initial_memory_state[index] = word;
             index += 1;
         }

@@ -10,7 +10,9 @@ use crate::{
 use super::addi::ADDI;
 use super::and::AND;
 use super::andi::ANDI;
+#[cfg(feature = "rv64")]
 use super::ld::LD;
+#[cfg(feature = "rv64")]
 use super::sd::SD;
 use super::sll::SLL;
 use super::slli::SLLI;
@@ -61,7 +63,10 @@ impl RISCVTrace for SW {
     ) -> Vec<Instruction> {
         match xlen {
             Xlen::Bit32 => self.inline_sequence_32(allocator),
+            #[cfg(feature = "rv64")]
             Xlen::Bit64 => self.inline_sequence_64(allocator),
+            #[cfg(not(feature = "rv64"))]
+            _ => unreachable!("RV64 not supported in rv32 build"),
         }
     }
 }
@@ -73,6 +78,7 @@ impl SW {
         asm.finalize()
     }
 
+    #[cfg(feature = "rv64")]
     fn inline_sequence_64(&self, allocator: &VirtualRegisterAllocator) -> Vec<Instruction> {
         let v_address = allocator.allocate();
         let v_dword_address = allocator.allocate();

@@ -1,7 +1,9 @@
 use serde::{Deserialize, Serialize};
 
 use super::add::ADD;
-use super::amo::{amo_post32, amo_post64, amo_pre32, amo_pre64};
+use super::amo::{amo_post32, amo_pre32};
+#[cfg(feature = "rv64")]
+use super::amo::{amo_post64, amo_pre64};
 use super::Instruction;
 use crate::utils::inline_helpers::InstrAssembler;
 use crate::utils::virtual_registers::VirtualRegisterAllocator;
@@ -87,6 +89,7 @@ impl RISCVTrace for AMOADDW {
                 asm.emit_r::<ADD>(*v_rs2, *v_rd, self.operands.rs2);
                 amo_post32(&mut asm, *v_rs2, self.operands.rs1, self.operands.rd, *v_rd);
             }
+            #[cfg(feature = "rv64")]
             Xlen::Bit64 => {
                 let v_mask = allocator.allocate();
                 let v_dword_address = allocator.allocate();
@@ -115,6 +118,8 @@ impl RISCVTrace for AMOADDW {
                     *v_rd,
                 );
             }
+            #[cfg(not(feature = "rv64"))]
+            _ => unreachable!("RV64 not supported in rv32 build"),
         }
 
         asm.finalize()

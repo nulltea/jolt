@@ -4,8 +4,9 @@ use serde::{Deserialize, Serialize};
 use crate::{
     declare_riscv_instr,
     emulator::cpu::{Cpu, Xlen},
-    instruction::ld::LD,
 };
+#[cfg(feature = "rv64")]
+use crate::instruction::ld::LD;
 
 use super::andi::ANDI;
 use super::format::format_load::FormatLoad;
@@ -13,6 +14,7 @@ use super::slli::SLLI;
 use super::srl::SRL;
 use super::virtual_assert_word_alignment::VirtualAssertWordAlignment;
 use super::virtual_lw::VirtualLW;
+#[cfg(feature = "rv64")]
 use super::virtual_sign_extend_word::VirtualSignExtendWord;
 use super::RAMRead;
 use super::{addi::ADDI, Instruction};
@@ -60,7 +62,10 @@ impl RISCVTrace for LW {
     ) -> Vec<Instruction> {
         match xlen {
             Xlen::Bit32 => self.inline_sequence_32(allocator),
+            #[cfg(feature = "rv64")]
             Xlen::Bit64 => self.inline_sequence_64(allocator),
+            #[cfg(not(feature = "rv64"))]
+            _ => unreachable!("RV64 not supported in rv32 build"),
         }
     }
 }
@@ -76,6 +81,7 @@ impl LW {
         asm.finalize()
     }
 
+    #[cfg(feature = "rv64")]
     fn inline_sequence_64(&self, allocator: &VirtualRegisterAllocator) -> Vec<Instruction> {
         // Virtual registers used in sequence
         let v_address = allocator.allocate();

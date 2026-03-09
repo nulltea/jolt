@@ -14,7 +14,7 @@ use crate::zkvm::JoltSharedPreprocessing;
 
 use crate::field::JoltField;
 use ark_ff::biginteger::{S128, S64};
-use common::constants::XLEN;
+use common::constants::{XlenInt, XLEN};
 use rayon::prelude::*;
 use std::fmt::Debug;
 use tracer::instruction::Cycle;
@@ -153,7 +153,16 @@ impl R1CSCycleInputs {
             0u64
         };
 
-        // Immediate
+        // Immediate — for rv32, most instructions use the low-word bit pattern as-is, but branch
+        // target updates need the signed branch offset. For rv64, the normalized immediate is
+        // already the correct full-width signed value.
+        #[cfg(not(feature = "rv64"))]
+        let imm_i128 = if flags_view[CircuitFlags::Branch] {
+            norm.operands.imm as i32 as i128
+        } else {
+            norm.operands.imm as XlenInt as i128
+        };
+        #[cfg(feature = "rv64")]
         let imm_i128 = norm.operands.imm;
         let imm_mag = imm_i128.unsigned_abs();
         debug_assert!(

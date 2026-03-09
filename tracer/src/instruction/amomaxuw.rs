@@ -1,10 +1,13 @@
 use serde::{Deserialize, Serialize};
 
 use super::add::ADD;
-use super::amo::{amo_post32, amo_post64, amo_pre32, amo_pre64};
+use super::amo::{amo_post32, amo_pre32};
+#[cfg(feature = "rv64")]
+use super::amo::{amo_post64, amo_pre64};
 use super::mul::MUL;
 use super::sltu::SLTU;
 use super::virtual_move::VirtualMove;
+#[cfg(feature = "rv64")]
 use super::virtual_zero_extend_word::VirtualZeroExtendWord;
 use super::xori::XORI;
 use super::Instruction;
@@ -103,6 +106,7 @@ impl RISCVTrace for AMOMAXUW {
                 asm.emit_r::<ADD>(*v_rs2, *v_tmp, *v_rs2);
                 amo_post32(&mut asm, *v_rs2, self.operands.rs1, self.operands.rd, *v_rd);
             }
+            #[cfg(feature = "rv64")]
             Xlen::Bit64 => {
                 let v_mask = allocator.allocate();
                 let v_dword_address = allocator.allocate();
@@ -137,6 +141,8 @@ impl RISCVTrace for AMOMAXUW {
                     *v_rd,
                 );
             }
+            #[cfg(not(feature = "rv64"))]
+            _ => unreachable!("RV64 not supported in rv32 build"),
         }
 
         asm.finalize()

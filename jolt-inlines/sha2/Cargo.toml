@@ -10,6 +10,7 @@ repository = "https://github.com/a16z/jolt"
 [features]
 default = []
 host = ["dep:ctor", "dep:tracer", "dep:tracing"]
+rv64 = ["tracer/rv64"]
 
 [dependencies]
 ctor = { workspace = true, optional = true }

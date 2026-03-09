@@ -32,6 +32,7 @@ use crate::field::JoltField;
 use crate::poly::multilinear_polynomial::MultilinearPolynomial;
 use crate::zkvm::instruction::CircuitFlags;
 use ark_ff::biginteger::{I8OrI96, S160};
+use common::constants::XLEN;
 
 pub use super::ops::{Term, LC};
 
@@ -383,7 +384,7 @@ pub static UNIFORM_R1CS: [NamedConstraint; NUM_R1CS_CONSTRAINTS] = [
     r1cs_eq_conditional!(
         name: ConstraintName::RightLookupSub,
         if { { JoltR1CSInputs::OpFlags(CircuitFlags::SubtractOperands) } }
-        => ( { JoltR1CSInputs::RightLookupOperand } ) == ( { JoltR1CSInputs::LeftInstructionInput } - { JoltR1CSInputs::RightInstructionInput } + { 0x10000000000000000i128 } )
+        => ( { JoltR1CSInputs::RightLookupOperand } ) == ( { JoltR1CSInputs::LeftInstructionInput } - { JoltR1CSInputs::RightInstructionInput } + { const (1i128 << XLEN) } )
     ),
     r1cs_eq_conditional!(
         name: ConstraintName::RightLookupEqProductIfMul,
@@ -623,10 +624,10 @@ pub fn eval_bz_by_name<F: JoltField>(c: &NamedConstraint, row: &R1CSCycleInputs)
             S160::from(row.right_lookup) - S160::from(expected_i128)
         }
         N::RightLookupSub => {
-            // B: RightLookupOperand - (LeftInstructionInput - RightInstructionInput + 2^64)
-            // with full-width integer semantics (matches the +2^64 in the uniform constraint)
+            // B: RightLookupOperand - (LeftInstructionInput - RightInstructionInput + 2^XLEN)
+            // with full-width integer semantics (matches the +2^XLEN in the uniform constraint)
             let expected_i128 =
-                (row.left_input as i128) - row.right_input.to_i128() + (1i128 << 64);
+                (row.left_input as i128) - row.right_input.to_i128() + (1i128 << XLEN);
             S160::from(row.right_lookup) - S160::from(expected_i128)
         }
         N::RightLookupEqProductIfMul => {
